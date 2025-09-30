@@ -1,0 +1,9 @@
+[submodule "EBT"]
+	path = EBT
+	url = https://github.com/alexiglad/EBT.git
+[submodule "LiveBench"]
+	path = LiveBench
+	url = https://github.com/LiveBench/LiveBench.git
+[submodule "SCE"]
+	path = SCE
+	url = https://github.com/Etamin/SCE.git

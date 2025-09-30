@@ -1,0 +1,131 @@
+{
+  "builder_name": "parquet",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "coding",
+  "dataset_size": 254934173,
+  "description": "",
+  "download_checksums": {
+    "hf://datasets/livebench/coding@a958549fdd8aa57be0a3fafe7b205ffc160ed5f4/data/test-00000-of-00001.parquet": {
+      "num_bytes": 244785858,
+      "checksum": null
+    }
+  },
+  "download_size": 244785858,
+  "features": {
+    "question_id": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "category": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "turns": {
+      "feature": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "_type": "List"
+    },
+    "question_title": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "public_test_cases": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "private_test_cases": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "original_json": {
+      "question_title": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "question_content": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "platform": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "question_id": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "contest_id": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "contest_date": {
+        "dtype": "timestamp[s]",
+        "_type": "Value"
+      },
+      "starter_code": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "difficulty": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "metadata": {
+        "dtype": "string",
+        "_type": "Value"
+      }
+    },
+    "release_date": {
+      "dtype": "timestamp[s]",
+      "_type": "Value"
+    },
+    "citation": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "task": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "livebench_release_date": {
+      "dtype": "timestamp[s]",
+      "_type": "Value"
+    },
+    "livebench_removal_date": {
+      "dtype": "timestamp[s]",
+      "_type": "Value"
+    },
+    "remainder": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "solution": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "partial_solution": {
+      "dtype": "string",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 499720031,
+  "splits": {
+    "test": {
+      "name": "test",
+      "num_bytes": 254934173,
+      "num_examples": 128,
+      "dataset_name": "coding"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}
