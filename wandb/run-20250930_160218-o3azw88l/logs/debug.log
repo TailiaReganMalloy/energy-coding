@@ -1,0 +1,28 @@
+2025-09-30 16:02:18,787 INFO    MainThread:90681 [wandb_setup.py:_flush():77] Current SDK version is 0.18.0
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_setup.py:_flush():77] Configure stats pid to 90681
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_setup.py:_flush():77] Loading settings from /Users/tailia.malloy/.config/wandb/settings
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_setup.py:_flush():77] Loading settings from /Users/tailia.malloy/Documents/Code/energy-coding/wandb/settings
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_setup.py:_flush():77] Loading settings from environment variables: {}
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_setup.py:_flush():77] Applying setup settings: {'_disable_service': False}
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_setup.py:_flush():77] Inferring run settings from compute environment: {'program_relpath': 'train_model.py', 'program_abspath': '/Users/tailia.malloy/Documents/Code/energy-coding/train_model.py', 'program': '/Users/tailia.malloy/Documents/Code/energy-coding/train_model.py'}
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_setup.py:_flush():77] Applying login settings: {}
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_setup.py:_flush():77] Applying login settings: {'api_key': '***REDACTED***'}
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_init.py:_log_setup():525] Logging user logs to ./wandb/run-20250930_160218-o3azw88l/logs/debug.log
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_init.py:_log_setup():526] Logging internal logs to ./wandb/run-20250930_160218-o3azw88l/logs/debug-internal.log
+2025-09-30 16:02:18,788 INFO    MainThread:90681 [wandb_init.py:init():609] calling init triggers
+2025-09-30 16:02:18,789 INFO    MainThread:90681 [wandb_init.py:init():616] wandb.init called with sweep_config: {}
+config: {}
+2025-09-30 16:02:18,789 INFO    MainThread:90681 [wandb_init.py:init():659] starting backend
+2025-09-30 16:02:18,789 INFO    MainThread:90681 [wandb_init.py:init():663] setting up manager
+2025-09-30 16:02:18,792 INFO    MainThread:90681 [backend.py:_multiprocessing_setup():105] multiprocessing start_methods=spawn,fork,forkserver, using: spawn
+2025-09-30 16:02:18,802 INFO    MainThread:90681 [wandb_init.py:init():671] backend started and connected
+2025-09-30 16:02:18,815 INFO    MainThread:90681 [wandb_init.py:init():766] updated telemetry
+2025-09-30 16:02:18,875 INFO    MainThread:90681 [wandb_init.py:init():799] communicating run to backend with 90.0 second timeout
+2025-09-30 16:02:19,401 INFO    MainThread:90681 [wandb_init.py:init():850] starting run threads in backend
+2025-09-30 16:02:19,974 INFO    MainThread:90681 [wandb_run.py:_console_start():2466] atexit reg
+2025-09-30 16:02:19,977 INFO    MainThread:90681 [wandb_run.py:_redirect():2312] redirect: wrap_raw
+2025-09-30 16:02:19,977 INFO    MainThread:90681 [wandb_run.py:_redirect():2377] Wrapping output streams.
+2025-09-30 16:02:19,977 INFO    MainThread:90681 [wandb_run.py:_redirect():2402] Redirects installed.
+2025-09-30 16:02:19,981 INFO    MainThread:90681 [wandb_init.py:init():893] run started, returning control to user process
+2025-09-30 16:02:20,207 INFO    MainThread:90681 [wandb_run.py:_config_callback():1393] config_cb None None {'lr': 0.001, 'batch_size_per_device': 32, 'num_workers_per_gpu': 12, 'max_steps': 100000, 'dataset_dir': './livebench_coding', 'dataset_name': 'livebench_coding', 'context_length': 256, 'pretokenize_dataset': True, 'tokenizer': 'EleutherAI/gpt-neox-20b', 'model_name': 'ebt', 'embedding_dim': 384, 'num_transformer_blocks': 6, 'multiheaded_attention_heads': 6, 'ffn_dim_multiplier': 1, 'weight_initialization_method': 'xavier', 'weight_initialization_gain': 1.0, 'execution_mode': 'pretrain', 'debug_unused_parameters': False, 'mcmc_step_size': 500.0, 'mcmc_step_size_lr_multiplier': 1500.0, 'mcmc_num_steps': 2, 'ebt_type': 'time_embed', 'normalize_initial_condition': True, 'denoising_initial_condition': 'random_noise', 'mcmc_step_size_learnable': True, 'no_mcmc_detach': False, 'ebt_norm': 'rms', 'ebt_act_func': 'silu', 'dyt_alpha_init': 0.5, 'mcmc_replay_buffer': False, 'gaussian_random_noise_scaling': 1.0, 'normalize_initial_condition_only_first_step': False, 'randomize_mcmc_step_size_scale': 1.0, 'randomize_mcmc_num_steps': 0, 'randomize_mcmc_num_steps_min': 0, 'randomize_mcmc_num_steps_final_landscape': False, 'langevin_dynamics_noise': 0.0, 'langevin_dynamics_noise_learnable': False, 'vocab_to_embed_uses_prob_dist': False, 'num_modality_processing_mlp_layers': 1, 'truncate_mcmc': False, 'clamp_futures_grad': False, 'clamp_futures_grad_max_change': 9.0, 'absolute_clamp': 0.0, 'clamp_max_after_warm_up': 0.0, 'sharpen_predicted_distribution': 0.0, 'reconstruction_coeff': 1.0, 'contrastive_loss': False, 'contrastive_loss_coeff': 0.0005, 'soften_target_prob_dist': 0.0}
+2025-09-30 16:02:20,283 WARNING MsgRouterThr:90681 [router.py:message_loop():77] message_loop has been closed

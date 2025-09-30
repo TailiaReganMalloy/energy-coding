@@ -9,10 +9,10 @@ from torch.utils.data import DataLoader
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # append parent dir
 
-from data.nlp.pajama_dataloader import RedPajamaDataset
-from data.nlp.collator import NLP_HF_Collator
-from model.nlp.baseline_transformer import Baseline_Transformer_NLP
-from model.nlp.ebt import EBT_NLP
+from EBT.data.nlp.pajama_dataloader import RedPajamaDataset
+from EBT.data.nlp.collator import NLP_HF_Collator
+from EBT.model.nlp.baseline_transformer import Baseline_Transformer_NLP
+from EBT.model.nlp.ebt import EBT_NLP
 
 ########################################################################################################################
 # Edit this code to allow for training with the livebench dataset. 
@@ -60,8 +60,8 @@ def main():
         num_workers_per_gpu=12,
         max_steps=100000,
         # data
-        dataset_dir="",
-        dataset_name="pajama",
+        dataset_dir="./livebench_coding",
+        dataset_name="livebench_coding",
         context_length=256,
         pretokenize_dataset=True,
         tokenizer="EleutherAI/gpt-neox-20b",
