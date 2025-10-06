@@ -7,6 +7,18 @@ __pycache__/
 venv/
 .env/
 .venv/
+env/
+
+# Large datasets / caches
+livebench_coding/downloads/
+livebench_coding/test/*.arrow
+wandb/
+live_bench/
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/
 
 # OS-specific files
 .DS_Store
