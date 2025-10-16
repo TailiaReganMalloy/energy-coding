@@ -7,8 +7,11 @@ EBT NLP model, and launches a lightweight PyTorch Lightning training loop.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Dict, Mapping, Tuple
@@ -21,6 +24,7 @@ import pytorch_lightning as pl
 import torch
 from datasets import load_dataset
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger
 from torch.utils.data import DataLoader
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -29,6 +33,7 @@ sys.path.append(str(PROJECT_ROOT))
 from EBT.data.nlp.collator import NLP_HF_Collator
 from EBT.data.nlp.programming_dataloader import ProgrammingDataset
 from EBT.model.nlp.ebt import EBT_NLP
+from EBT.model.nlp.baseline_transformer import Baseline_Transformer_NLP
 
 
 def _ensure_livebench_cached(split: str, *, max_samples: int | None = None) -> Path:
@@ -186,17 +191,26 @@ def _resolve_device_configuration(
 
 
 class LiveBenchEBTModule(pl.LightningModule):
-    """Minimal Lightning wrapper around the EBT NLP model."""
+    """Minimal Lightning wrapper around the EBT or baseline NLP models."""
 
-    def __init__(self, hparams: Mapping[str, object]):
+    def __init__(self, hparams: Mapping[str, object], *, model_kind: str):
         super().__init__()
         hparam_dict = dict(hparams)
+        hparam_dict["model_kind"] = model_kind
         self.save_hyperparameters(hparam_dict)
         self._hparams = SimpleNamespace(**hparam_dict)
+        self._model_kind = model_kind
 
-        self.model = EBT_NLP(self._hparams)
+        self.model = self._build_model()
         self.dataset = ProgrammingDataset(self._hparams)
         self._collate_fn = NLP_HF_Collator(self._hparams)
+
+    def _build_model(self):
+        if self._model_kind == "ebt":
+            return EBT_NLP(self._hparams)
+        if self._model_kind == "baseline":
+            return Baseline_Transformer_NLP(self._hparams)
+        raise ValueError(f"Unsupported model kind: {self._model_kind}")
 
     @property
     def effective_batch_size(self) -> int:
@@ -268,39 +282,79 @@ def main() -> None:
     pl.seed_everything(42, workers=True)
 
     dataset_dir = _ensure_livebench_cached("test", max_samples=args.limit_samples)
-    hparams = _default_hparams(dataset_dir, args.limit_samples)
-    hparams["max_steps"] = args.max_steps
-    hparams["max_epochs"] = args.max_epochs
-    hparams["batch_size_per_device"] = args.batch_size
+    base_hparams = _default_hparams(dataset_dir, args.limit_samples)
+    base_hparams["max_steps"] = args.max_steps
+    base_hparams["max_epochs"] = args.max_epochs
+    base_hparams["batch_size_per_device"] = args.batch_size
 
     accelerator, devices, precision = _resolve_device_configuration(
         args.accelerator, args.devices, args.precision
     )
-    hparams["accelerator"] = accelerator
+    base_hparams["accelerator"] = accelerator
 
-    lightning_module = LiveBenchEBTModule(hparams)
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    models_root = PROJECT_ROOT / "Models" / f"livebench_{run_timestamp}"
+    results_root = PROJECT_ROOT / "Results" / f"livebench_{run_timestamp}"
+    models_root.mkdir(parents=True, exist_ok=True)
+    results_root.mkdir(parents=True, exist_ok=True)
 
-    checkpointing = ModelCheckpoint(
-        dirpath=PROJECT_ROOT / "logs" / "livebench_coding",
-        save_top_k=1,
-        save_last=True,
-        monitor="train_loss",
-        mode="min",
-    )
+    runs = ("ebt", "baseline")
 
-    trainer = pl.Trainer(
-        accelerator=accelerator,
-        devices=devices,
-        max_steps=args.max_steps,
-        max_epochs=args.max_epochs,
-        precision=precision,
-        gradient_clip_val=hparams["gradient_clip_val"],
-        log_every_n_steps=1,
-        callbacks=[checkpointing],
-        enable_checkpointing=True,
-    )
+    for model_kind in runs:
+        hparams = deepcopy(base_hparams)
+        hparams["model_name"] = model_kind
 
-    trainer.fit(lightning_module)
+        lightning_module = LiveBenchEBTModule(hparams, model_kind=model_kind)
+
+        run_models_dir = models_root / model_kind
+        run_results_dir = results_root / model_kind
+        run_models_dir.mkdir(parents=True, exist_ok=True)
+        run_results_dir.mkdir(parents=True, exist_ok=True)
+
+        checkpointing = ModelCheckpoint(
+            dirpath=run_models_dir,
+            filename=f"{model_kind}-{{epoch:02d}}-{{step:05d}}",
+            save_top_k=1,
+            save_last=True,
+            monitor="train_loss",
+            mode="min",
+        )
+
+        logger = CSVLogger(save_dir=str(run_results_dir), name="metrics")
+
+        trainer = pl.Trainer(
+            accelerator=accelerator,
+            devices=devices,
+            max_steps=args.max_steps,
+            max_epochs=args.max_epochs,
+            precision=precision,
+            gradient_clip_val=hparams["gradient_clip_val"],
+            log_every_n_steps=1,
+            callbacks=[checkpointing],
+            enable_checkpointing=True,
+            logger=logger,
+        )
+
+        trainer.fit(lightning_module)
+
+        metrics = {}
+        for key, value in trainer.callback_metrics.items():
+            if isinstance(value, torch.Tensor):
+                metrics[key] = float(value.detach().cpu())
+            elif isinstance(value, (int, float)):
+                metrics[key] = float(value)
+
+        metrics_path = run_results_dir / "final_metrics.json"
+        with metrics_path.open("w", encoding="utf-8") as f:
+            json.dump(metrics, f, indent=2, sort_keys=True)
+
+        serializable_hparams = {
+            key: (value if isinstance(value, (int, float, str, bool)) or value is None else str(value))
+            for key, value in hparams.items()
+        }
+        hparams_path = run_results_dir / "hparams.json"
+        with hparams_path.open("w", encoding="utf-8") as f:
+            json.dump(serializable_hparams, f, indent=2, sort_keys=True)
 
 
 if __name__ == "__main__":
