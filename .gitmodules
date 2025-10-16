@@ -1,6 +1,6 @@
 [submodule "EBT"]
 	path = EBT
-	url = https://github.com/alexiglad/EBT.git
+	url = https://github.com/TailiaReganMalloy/EBT.git
 [submodule "LiveBench"]
 	path = LiveBench
 	url = https://github.com/LiveBench/LiveBench.git
