@@ -7,10 +7,15 @@ EBT NLP model, and launches a lightweight PyTorch Lightning training loop.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Dict, Mapping
+from typing import Dict, Mapping, Tuple
+
+# Allow Torch to transparently fall back to CPU for ops not yet implemented on MPS.
+if "PYTORCH_ENABLE_MPS_FALLBACK" not in os.environ:
+    os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
 import pytorch_lightning as pl
 import torch
@@ -138,6 +143,48 @@ def _default_hparams(dataset_dir: Path, limit_samples: int | None) -> Dict[str, 
     return {**base, **ebt_specific}
 
 
+def _resolve_device_configuration(
+    requested_accelerator: str, requested_devices: int, requested_precision: str
+) -> Tuple[str, int, str]:
+    """Resolve accelerator, device count, and precision for the current hardware.
+
+    Preference order when ``requested_accelerator`` is ``"auto"``:
+    Apple Metal (MPS) → CUDA GPU → CPU.
+    Ensures macOS users transparently run on the Apple GPU while keeping
+    configuration overridable via command-line flags.
+    """
+
+    accelerator = requested_accelerator
+    devices = requested_devices
+    precision = requested_precision
+
+    mps_available = bool(getattr(torch.backends, "mps", None)) and torch.backends.mps.is_available()
+    if accelerator == "auto":
+        if mps_available:
+            accelerator = "mps"
+            devices = 1
+        elif torch.cuda.is_available():
+            accelerator = "gpu"
+        else:
+            accelerator = "cpu"
+
+    if accelerator == "mps":
+        devices = 1  # PyTorch currently exposes a single logical MPS device.
+        torch.set_float32_matmul_precision("medium")
+        if precision in {"16-mixed", "bf16-mixed", "bf16-true"}:
+            # Mixed precision is not yet supported on MPS; fall back to float32.
+            precision = "32-true"
+            print("[train_ebt] MPS does not support mixed precision; using 32-true.")
+        print("[train_ebt] Using Apple Metal (MPS) accelerator for training.")
+    elif accelerator == "gpu" and torch.cuda.is_available():
+        # Default to efficient mixed precision on CUDA when not explicitly overridden.
+        if precision == "32-true":
+            precision = "16-mixed"
+            print("[train_ebt] CUDA accelerator detected; defaulting to 16-mixed precision.")
+
+    return accelerator, devices, precision
+
+
 class LiveBenchEBTModule(pl.LightningModule):
     """Minimal Lightning wrapper around the EBT NLP model."""
 
@@ -176,12 +223,15 @@ class LiveBenchEBTModule(pl.LightningModule):
         if torch.cuda.is_available():
             num_workers *= max(1, torch.cuda.device_count())
 
+        accelerator = getattr(self._hparams, "accelerator", "cpu")
+        pin_memory = accelerator == "gpu" and torch.cuda.is_available()
+
         return DataLoader(
             self.dataset,
             batch_size=self._hparams.batch_size_per_device,
             shuffle=True,
             num_workers=num_workers,
-            pin_memory=torch.cuda.is_available(),
+            pin_memory=pin_memory,
             collate_fn=self._collate_fn,
         )
 
@@ -189,6 +239,7 @@ class LiveBenchEBTModule(pl.LightningModule):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train an EBT model on LiveBench coding")
     parser.add_argument("--max-steps", type=int, default=200, help="Maximum optimisation steps")
+    parser.add_argument("--max-epochs", type=int, default=10, help="Maximum optimisation epochs")
     parser.add_argument("--batch-size", type=int, default=2, help="Per-device batch size")
     parser.add_argument(
         "--limit-samples",
@@ -219,7 +270,13 @@ def main() -> None:
     dataset_dir = _ensure_livebench_cached("test", max_samples=args.limit_samples)
     hparams = _default_hparams(dataset_dir, args.limit_samples)
     hparams["max_steps"] = args.max_steps
+    hparams["max_epochs"] = args.max_epochs
     hparams["batch_size_per_device"] = args.batch_size
+
+    accelerator, devices, precision = _resolve_device_configuration(
+        args.accelerator, args.devices, args.precision
+    )
+    hparams["accelerator"] = accelerator
 
     lightning_module = LiveBenchEBTModule(hparams)
 
@@ -232,11 +289,11 @@ def main() -> None:
     )
 
     trainer = pl.Trainer(
-        accelerator=args.accelerator,
-        devices=args.devices,
+        accelerator=accelerator,
+        devices=devices,
         max_steps=args.max_steps,
-        max_epochs=1,
-        precision=args.precision,
+        max_epochs=args.max_epochs,
+        precision=precision,
         gradient_clip_val=hparams["gradient_clip_val"],
         log_every_n_steps=1,
         callbacks=[checkpointing],
