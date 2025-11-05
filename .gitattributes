@@ -1,6 +1,4 @@
 *.arrow filter=lfs diff=lfs merge=lfs -text
-<<<<<<< HEAD
-=======
 *.json filter=lfs diff=lfs merge=lfs -text
 *.lock filter=lfs diff=lfs merge=lfs -text
 *.pt filter=lfs diff=lfs merge=lfs -text
@@ -9,4 +7,3 @@
 *.bin filter=lfs diff=lfs merge=lfs -text
 *.tar.gz filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
->>>>>>> b676cab (Initial commit)
