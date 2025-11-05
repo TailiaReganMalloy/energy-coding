@@ -7,6 +7,7 @@ __pycache__/
 venv/
 .env/
 .venv/
+<<<<<<< HEAD
 env/
 
 # Large datasets / caches
@@ -19,6 +20,8 @@ live_bench/
 *.egg-info/
 dist/
 build/
+=======
+>>>>>>> b676cab (Initial commit)
 
 # OS-specific files
 .DS_Store
