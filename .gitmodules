@@ -10,3 +10,6 @@
 [submodule "nanoGPT"]
 	path = nanoGPT
 	url = https://github.com/karpathy/nanoGPT.git
+[submodule "nanochat"]
+	path = nanochat
+	url = https://github.com/karpathy/nanochat.git
