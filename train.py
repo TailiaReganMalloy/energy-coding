@@ -1,361 +1,536 @@
-"""Train an Energy-Based Transformer (EBT) on the LiveBench coding dataset.
+"""
+Train an Energy Based Transformer (EBT) on OpenWebText using the same
+training loop structure as nanoGPT.
 
-This script prepares the LiveBench coding completion split, instantiates the
-EBT NLP model, and launches a lightweight PyTorch Lightning training loop.
+Example (single GPU):
+	python train.py --dataset=openwebtext --data_dir=nanoGPT/data/openwebtext
+
+Example (DDP, 4 GPUs):
+	torchrun --standalone --nproc_per_node=4 train.py --dataset=openwebtext --data_dir=nanoGPT/data/openwebtext
 """
 
-from __future__ import annotations
-
-import argparse
-import json
 import os
-import sys
-from copy import deepcopy
-from datetime import datetime
-from pathlib import Path
+import time
+import math
+import pickle
+import runpy
+from contextlib import nullcontext
 from types import SimpleNamespace
-from typing import Dict, Mapping, Tuple
 
-# Allow Torch to transparently fall back to CPU for ops not yet implemented on MPS.
-if "PYTORCH_ENABLE_MPS_FALLBACK" not in os.environ:
-    os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+import sys
+from pathlib import Path
 
-import pytorch_lightning as pl
+import numpy as np
 import torch
-from datasets import load_dataset
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import CSVLogger
-from torch.utils.data import DataLoader
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group, destroy_process_group
+
+def load_env_file(env_path: Path) -> None:
+	if not env_path.exists():
+		return
+	for line in env_path.read_text().splitlines():
+		line = line.strip()
+		if not line or line.startswith("#") or "=" not in line:
+			continue
+		key, value = line.split("=", 1)
+		key = key.strip()
+		value = value.strip().strip("\"").strip("'")
+		os.environ.setdefault(key, value)
+
+
+def configure_hf_cache(cache_root: Path | None) -> None:
+	if cache_root is None:
+		return
+	cache_root.mkdir(parents=True, exist_ok=True)
+	os.environ["HF_HOME"] = str(cache_root)
+	os.environ["HF_DATASETS_CACHE"] = str(cache_root / "datasets")
+	os.environ["HF_HUB_CACHE"] = str(cache_root / "hub")
+	os.environ["TRANSFORMERS_CACHE"] = str(cache_root / "transformers")
+	os.environ["XDG_CACHE_HOME"] = str(cache_root)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-sys.path.append(str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "EBT"))
 
-from EBT.data.nlp.collator import NLP_HF_Collator
-from EBT.data.nlp.programming_dataloader import ProgrammingDataset
-from EBT.model.nlp.ebt import EBT_NLP
-from EBT.model.nlp.baseline_transformer import Baseline_Transformer_NLP
+load_env_file(PROJECT_ROOT / ".env")
+hf_cache_env = os.environ.get("HF_CACHE_DIR")
+hf_cache_dir = Path(hf_cache_env).expanduser() if hf_cache_env else (PROJECT_ROOT / ".hf_cache")
+configure_hf_cache(hf_cache_dir)
 
+from model.nlp.ebt import EBT_NLP
 
-def _ensure_livebench_cached(split: str, *, max_samples: int | None = None) -> Path:
-    """Materialise the LiveBench coding dataset as a datasets "save_to_disk" cache.
+# -----------------------------------------------------------------------------
+# default config values designed to mirror nanoGPT training loop behavior
+# I/O
+out_dir = "out_ebt"
+eval_interval = 2000
+log_interval = 1
+eval_iters = 200
+eval_only = False
+always_save_checkpoint = True
+init_from = "scratch"  # 'scratch' or 'resume'
 
-    ProgrammingDataset expects a HuggingFace dataset directory. The LiveBench
-    repo ships JSONL files, so we lazily convert them on first run.
-    """
+# data
+dataset = "openwebtext"
+data_dir = os.path.join("nanoGPT", "data", dataset)
+gradient_accumulation_steps = 5 * 8
+batch_size = 4  # micro-batch size (smaller for local machines)
+block_size = 256
 
-    raw_json = (
-        PROJECT_ROOT
-        / "livebench"
-        / "livebench"
-        / "data"
-        / "live_bench"
-        / "coding"
-        / "coding_completion"
-        / "question.jsonl"
-    )
-    if not raw_json.exists():
-        raise FileNotFoundError(
-            "LiveBench coding completion JSONL not found: " f"{raw_json}"
-        )
+# model
+n_layer = 6
+n_head = 6
+n_embd = 384
+dropout = 0.0
 
-    cache_name = "hf_cache_full" if max_samples is None else f"hf_cache_{max_samples}"
-    cache_dir = raw_json.parent / cache_name
-    if not cache_dir.exists():
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        dataset_dict = load_dataset("json", data_files={split: str(raw_json)})
-        dataset = dataset_dict[split]
-        total = min(max_samples, len(dataset)) if max_samples is not None else len(dataset)
-        subset = dataset.select(range(total)) if total < len(dataset) else dataset
-        subset = subset.map(
-            lambda example: example,
-            desc=f"Caching {total} LiveBench coding sample{'s' if total != 1 else ''}",
-            load_from_cache_file=False,
-        )
-        subset.save_to_disk(str(cache_dir))
+# optimizer
+learning_rate = 6e-4
+max_iters = 600000
+weight_decay = 1e-1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
 
-    return cache_dir
+# learning rate decay settings
+decay_lr = True
+warmup_iters = 2000
+lr_decay_iters = 600000
+min_lr = 6e-5
 
+# DDP settings
+backend = "nccl"
 
-def _default_hparams(dataset_dir: Path, limit_samples: int | None) -> Dict[str, object]:
-    """Return a baseline hyperparameter dictionary for LiveBench training."""
+# system
+device = "auto"  # 'auto', 'cuda', 'mps', or 'cpu'
+dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
+compile = False
 
-    base: Dict[str, object] = {
-        # optimisation
-        "lr": 3e-4,
-        "batch_size_per_device": 2,
-        "num_workers_per_gpu": 0,
-        "max_steps": 200,
-        "gradient_clip_val": 1.0,
-        # dataset
-        "dataset_dir": str(dataset_dir),
-        "dataset_name": "livebench_coding",
-        "dataset_split": "test",
-        "dataset_map_workers": 1,
-        "max_dataset_samples": limit_samples,
-        "context_length": 512,
-        "pretokenize_dataset": False,
-        "tokenizer": "EleutherAI/gpt-neox-20b",
-        # model choice + size
-        "model_name": "ebt",
-        "embedding_dim": 384,
-        "num_transformer_blocks": 6,
-        "multiheaded_attention_heads": 6,
-        "ffn_dim_multiplier": 1,
-        "weight_initialization_method": "xavier",
-        "weight_initialization_gain": 1.0,
-        # execution flags
-        "execution_mode": "pretrain",
-        "debug_unused_parameters": False,
-        "mcmc_replay_buffer": False,
-    }
+# memory check
+check_memory_fit = True
+memory_safety_factor = 1.2
+auto_reduce_on_oom = True
+oom_retries = 3
 
-    ebt_specific: Dict[str, object] = {
-        "mcmc_step_size": 400.0,
-        "mcmc_step_size_lr_multiplier": 1200.0,
-        "mcmc_num_steps": 2,
-        "ebt_type": "time_embed",
-        "normalize_initial_condition": True,
-        "denoising_initial_condition": "random_noise",
-        "mcmc_step_size_learnable": True,
-        "no_mcmc_detach": False,
-        "ebt_norm": "rms",
-        "ebt_act_func": "silu",
-        "dyt_alpha_init": 0.5,
-        "mcmc_replay_buffer_size": 1024,
-        "mcmc_replay_buffer_sample_bs_percent": 0.25,
-        "gaussian_random_noise_scaling": 1.0,
-        "normalize_initial_condition_only_first_step": False,
-        "randomize_mcmc_step_size_scale": 1.0,
-        "randomize_mcmc_num_steps": 0,
-        "randomize_mcmc_num_steps_min": 0,
-        "randomize_mcmc_num_steps_final_landscape": False,
-        "langevin_dynamics_noise": 0.0,
-        "langevin_dynamics_noise_learnable": False,
-        "vocab_to_embed_uses_prob_dist": False,
-        "num_modality_processing_mlp_layers": 1,
-        "truncate_mcmc": False,
-        "clamp_futures_grad": False,
-        "clamp_futures_grad_max_change": 9.0,
-        "absolute_clamp": 0.0,
-        "clamp_max_after_warm_up": 0.0,
-        "sharpen_predicted_distribution": 0.0,
-        "reconstruction_coeff": 1.0,
-        "contrastive_loss": False,
-        "contrastive_loss_coeff": 5e-4,
-        "soften_target_prob_dist": 0.0,
-    }
+# EBT-specific defaults
+tokenizer = "gpt2"
+model_name = "ebt"
+ebt_type = "default"
+ebt_norm = "rms"
+ebt_act_func = "silu"
+ffn_dim_multiplier = None
+dyt_alpha_init = 0.5
+weight_initialization_method = "xavier"
+weight_initialization_gain = 1.0
 
-    return {**base, **ebt_specific}
+mcmc_num_steps = 1
+mcmc_step_size = 60.0
+mcmc_step_size_learnable = False
+langevin_dynamics_noise = 0.0
+langevin_dynamics_noise_learnable = False
+randomize_mcmc_step_size_scale = 1.0
+randomize_mcmc_num_steps = 0
+randomize_mcmc_num_steps_final_landscape = False
+randomize_mcmc_num_steps_min = 0
+denoising_initial_condition = "random_noise"
+gaussian_random_noise_scaling = 1.0
+normalize_initial_condition = False
+normalize_initial_condition_only_first_step = False
+vocab_to_embed_uses_prob_dist = False
+num_modality_processing_mlp_layers = 1
+learnable_process_memory = False
+process_memory_type = None
+process_memory_linear_layer = False
+clamp_futures_grad = False
+clamp_futures_grad_max_change = 9.0
+absolute_clamp = 0.0
+clamp_max_after_warm_up = 0.0
+sharpen_predicted_distribution = 0.0
+truncate_mcmc = False
+no_mcmc_detach = False
+contrastive_loss = False
+contrastive_loss_coeff = 0.0005
+discrete_contrastive_loss_true_logit_val = 0.0
+soften_target_prob_dist = 0.0
+reconstruction_coeff = 1.0
 
+# -----------------------------------------------------------------------------
+config_keys = [k for k, v in globals().items() if not k.startswith("_") and isinstance(v, (int, float, bool, str))]
+exec(open(os.path.join("nanoGPT", "configurator.py")).read())
+config = {k: globals()[k] for k in config_keys}
+# -----------------------------------------------------------------------------
 
-def _resolve_device_configuration(
-    requested_accelerator: str, requested_devices: int, requested_precision: str
-) -> Tuple[str, int, str]:
-    """Resolve accelerator, device count, and precision for the current hardware.
+data_dir = os.path.abspath(os.path.join(PROJECT_ROOT, data_dir)) if not os.path.isabs(data_dir) else data_dir
 
-    Preference order when ``requested_accelerator`` is ``"auto"``:
-    Apple Metal (MPS) → CUDA GPU → CPU.
-    Ensures macOS users transparently run on the Apple GPU while keeping
-    configuration overridable via command-line flags.
-    """
+# DDP setup
+ddp = int(os.environ.get("RANK", -1)) != -1
+if ddp:
+	init_process_group(backend=backend)
+	ddp_rank = int(os.environ["RANK"])
+	ddp_local_rank = int(os.environ["LOCAL_RANK"])
+	ddp_world_size = int(os.environ["WORLD_SIZE"])
+	device = f"cuda:{ddp_local_rank}"
+	torch.cuda.set_device(device)
+	master_process = ddp_rank == 0
+	seed_offset = ddp_rank
+	assert gradient_accumulation_steps % ddp_world_size == 0
+	gradient_accumulation_steps //= ddp_world_size
+else:
+	master_process = True
+	seed_offset = 0
+	ddp_world_size = 1
 
-    accelerator = requested_accelerator
-    devices = requested_devices
-    precision = requested_precision
+tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
+print(f"tokens per iteration will be: {tokens_per_iter:,}")
 
-    mps_available = bool(getattr(torch.backends, "mps", None)) and torch.backends.mps.is_available()
-    if accelerator == "auto":
-        if mps_available:
-            accelerator = "mps"
-            devices = 1
-        elif torch.cuda.is_available():
-            accelerator = "gpu"
-        else:
-            accelerator = "cpu"
+if master_process:
+	os.makedirs(out_dir, exist_ok=True)
 
-    if accelerator == "mps":
-        devices = 1  # PyTorch currently exposes a single logical MPS device.
-        torch.set_float32_matmul_precision("medium")
-        if precision in {"16-mixed", "bf16-mixed", "bf16-true"}:
-            # Mixed precision is not yet supported on MPS; fall back to float32.
-            precision = "32-true"
-            print("[train_ebt] MPS does not support mixed precision; using 32-true.")
-        print("[train_ebt] Using Apple Metal (MPS) accelerator for training.")
-    elif accelerator == "gpu" and torch.cuda.is_available():
-        # Default to efficient mixed precision on CUDA when not explicitly overridden.
-        if precision == "32-true":
-            precision = "16-mixed"
-            print("[train_ebt] CUDA accelerator detected; defaulting to 16-mixed precision.")
+torch.manual_seed(1337 + seed_offset)
 
-    return accelerator, devices, precision
+if not ddp:
+	if device == "auto":
+		if torch.cuda.is_available():
+			device = "cuda"
+		elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+			device = "mps"
+		else:
+			device = "cpu"
+	elif device == "mps" and not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+		raise RuntimeError("MPS requested but not available.")
+	elif device == "cuda" and not torch.cuda.is_available():
+		raise RuntimeError("CUDA requested but not available.")
+else:
+	if "cuda" not in device:
+		raise RuntimeError("DDP is only supported on CUDA devices.")
 
+if "cuda" in device and torch.cuda.is_available():
+	torch.backends.cuda.matmul.allow_tf32 = True
+	torch.backends.cudnn.allow_tf32 = True
 
-class LiveBenchEBTModule(pl.LightningModule):
-    """Minimal Lightning wrapper around the EBT or baseline NLP models."""
+if "cuda" in device:
+	device_type = "cuda"
+elif device == "mps":
+	device_type = "mps"
+else:
+	device_type = "cpu"
 
-    def __init__(self, hparams: Mapping[str, object], *, model_kind: str):
-        super().__init__()
-        hparam_dict = dict(hparams)
-        hparam_dict["model_kind"] = model_kind
-        self.save_hyperparameters(hparam_dict)
-        self._hparams = SimpleNamespace(**hparam_dict)
-        self._model_kind = model_kind
+ptdtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[dtype]
+ctx = nullcontext() if device_type in ("cpu", "mps") else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-        self.model = self._build_model()
-        self.dataset = ProgrammingDataset(self._hparams)
-        self._collate_fn = NLP_HF_Collator(self._hparams)
+def ensure_openwebtext_prepared():
+	train_bin = os.path.join(data_dir, "train.bin")
+	val_bin = os.path.join(data_dir, "val.bin")
+	if os.path.exists(train_bin) and os.path.exists(val_bin):
+		return
 
-    def _build_model(self):
-        if self._model_kind == "ebt":
-            return EBT_NLP(self._hparams)
-        if self._model_kind == "baseline":
-            return Baseline_Transformer_NLP(self._hparams)
-        raise ValueError(f"Unsupported model kind: {self._model_kind}")
+	if dataset != "openwebtext":
+		raise FileNotFoundError(
+			f"Missing dataset binaries at {data_dir}. Expected train.bin and val.bin."
+		)
 
-    @property
-    def effective_batch_size(self) -> int:
-        return self._hparams.batch_size_per_device
+	prepare_path = os.path.join(PROJECT_ROOT, "nanoGPT", "data", "openwebtext", "prepare.py")
+	if not os.path.exists(prepare_path):
+		raise FileNotFoundError(
+			f"Missing OpenWebText prepare script at {prepare_path}. Cannot build dataset."
+		)
 
-    def training_step(self, batch: Mapping[str, torch.Tensor], batch_idx: int):  # type: ignore[override]
-        metrics = self.model.forward_loss_wrapper(batch, phase="train")
-        loss = metrics["loss"]
-        loggable: Dict[str, torch.Tensor] = {}
-        for key, value in metrics.items():
-            if isinstance(value, torch.Tensor):
-                loggable[f"train_{key}"] = value.detach()
-            elif isinstance(value, (int, float)):
-                loggable[f"train_{key}"] = torch.tensor(value, device=loss.device)
+	if ddp and not master_process:
+		return
 
-        self.log_dict(loggable, on_step=True, on_epoch=True, batch_size=batch["input_ids"].size(0))
-        return loss
+	# Ensure HF cache uses the configured directory.
+	configure_hf_cache(hf_cache_dir)
 
-    def configure_optimizers(self):  # type: ignore[override]
-        return torch.optim.AdamW(self.model.parameters(), lr=self._hparams.lr)
+	os.environ["OPENWEBTEXT_OUT_DIR"] = data_dir
 
-    def train_dataloader(self) -> DataLoader:  # type: ignore[override]
-        num_workers = self._hparams.num_workers_per_gpu
-        if torch.cuda.is_available():
-            num_workers *= max(1, torch.cuda.device_count())
-
-        accelerator = getattr(self._hparams, "accelerator", "cpu")
-        pin_memory = accelerator == "gpu" and torch.cuda.is_available()
-
-        return DataLoader(
-            self.dataset,
-            batch_size=self._hparams.batch_size_per_device,
-            shuffle=True,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            collate_fn=self._collate_fn,
-        )
+	print("OpenWebText binaries not found. Running prepare.py to build train.bin/val.bin...")
+	try:
+		runpy.run_path(prepare_path, run_name="__main__")
+	except Exception as exc:
+		raise RuntimeError(
+			"Failed to prepare OpenWebText. Check HF cache permissions or set HF_HOME/HF_DATASETS_CACHE."
+		) from exc
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train an EBT model on LiveBench coding")
-    parser.add_argument("--max-steps", type=int, default=200, help="Maximum optimisation steps")
-    parser.add_argument("--max-epochs", type=int, default=10, help="Maximum optimisation epochs")
-    parser.add_argument("--batch-size", type=int, default=2, help="Per-device batch size")
-    parser.add_argument(
-        "--limit-samples",
-        type=int,
-        default=1,
-        help="Optional cap on the number of training examples (default: 1 for smoke testing)",
-    )
-    parser.add_argument(
-        "--accelerator",
-        type=str,
-        default="auto",
-        help="Torch accelerator to use (auto|cpu|gpu|mps)",
-    )
-    parser.add_argument("--devices", type=int, default=1, help="Number of devices to train on")
-    parser.add_argument(
-        "--precision",
-        type=str,
-        default="32-true",
-        help="PyTorch Lightning precision flag (e.g., 32-true, bf16-true)",
-    )
-    return parser.parse_args()
+# data loader (openwebtext binary, same as nanoGPT)
+def get_batch(split: str):
+	split_name = "train" if split == "train" else "val"
+	data = np.memmap(os.path.join(data_dir, f"{split_name}.bin"), dtype=np.uint16, mode="r")
+	ix = torch.randint(len(data) - (block_size + 1), (batch_size,))
+	x = torch.stack([torch.from_numpy((data[i : i + block_size + 1]).astype(np.int64)) for i in ix])
+	if device_type == "cuda":
+		x = x.pin_memory().to(device, non_blocking=True)
+	else:
+		x = x.to(device)
+	return {"input_ids": x.unsqueeze(1)}
+
+# attempt to derive vocab_size from the dataset
+meta_path = os.path.join(data_dir, "meta.pkl")
+if os.path.exists(meta_path) and master_process:
+	with open(meta_path, "rb") as f:
+		meta = pickle.load(f)
+	meta_vocab_size = meta.get("vocab_size", None)
+	if meta_vocab_size is not None:
+		print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
+
+# model init
+hparams = SimpleNamespace(
+	modality="NLP",
+	model_name=model_name,
+	tokenizer=tokenizer,
+	context_length=block_size,
+	num_transformer_blocks=n_layer,
+	multiheaded_attention_heads=n_head,
+	embedding_dim=n_embd,
+	ffn_dim_multiplier=ffn_dim_multiplier,
+	batch_size_per_device=batch_size,
+	ebt_type=ebt_type,
+	ebt_norm=ebt_norm,
+	ebt_act_func=ebt_act_func,
+	dyt_alpha_init=dyt_alpha_init,
+	weight_initialization_method=weight_initialization_method,
+	weight_initialization_gain=weight_initialization_gain,
+	mcmc_num_steps=mcmc_num_steps,
+	mcmc_step_size=mcmc_step_size,
+	mcmc_step_size_learnable=mcmc_step_size_learnable,
+	langevin_dynamics_noise=langevin_dynamics_noise,
+	langevin_dynamics_noise_learnable=langevin_dynamics_noise_learnable,
+	randomize_mcmc_step_size_scale=randomize_mcmc_step_size_scale,
+	randomize_mcmc_num_steps=randomize_mcmc_num_steps,
+	randomize_mcmc_num_steps_final_landscape=randomize_mcmc_num_steps_final_landscape,
+	randomize_mcmc_num_steps_min=randomize_mcmc_num_steps_min,
+	denoising_initial_condition=denoising_initial_condition,
+	gaussian_random_noise_scaling=gaussian_random_noise_scaling,
+	normalize_initial_condition=normalize_initial_condition,
+	normalize_initial_condition_only_first_step=normalize_initial_condition_only_first_step,
+	vocab_to_embed_uses_prob_dist=vocab_to_embed_uses_prob_dist,
+	num_modality_processing_mlp_layers=num_modality_processing_mlp_layers,
+	learnable_process_memory=learnable_process_memory,
+	process_memory_type=process_memory_type,
+	process_memory_linear_layer=process_memory_linear_layer,
+	clamp_futures_grad=clamp_futures_grad,
+	clamp_futures_grad_max_change=clamp_futures_grad_max_change,
+	absolute_clamp=absolute_clamp,
+	clamp_max_after_warm_up=clamp_max_after_warm_up,
+	sharpen_predicted_distribution=sharpen_predicted_distribution,
+	truncate_mcmc=truncate_mcmc,
+	no_mcmc_detach=no_mcmc_detach,
+	contrastive_loss=contrastive_loss,
+	contrastive_loss_coeff=contrastive_loss_coeff,
+	discrete_contrastive_loss_true_logit_val=discrete_contrastive_loss_true_logit_val,
+	soften_target_prob_dist=soften_target_prob_dist,
+	reconstruction_coeff=reconstruction_coeff,
+	mcmc_replay_buffer=False,
+	execution_mode="pretrain",
+	debug_unused_parameters=False,
+)
+
+model = EBT_NLP(hparams).to(device)
+
+def count_parameters(model_to_count):
+	return sum(p.numel() for p in model_to_count.parameters())
 
 
-def main() -> None:
-    args = parse_args()
-    pl.seed_everything(42, workers=True)
-
-    dataset_dir = _ensure_livebench_cached("test", max_samples=args.limit_samples)
-    base_hparams = _default_hparams(dataset_dir, args.limit_samples)
-    base_hparams["max_steps"] = args.max_steps
-    base_hparams["max_epochs"] = args.max_epochs
-    base_hparams["batch_size_per_device"] = args.batch_size
-
-    accelerator, devices, precision = _resolve_device_configuration(
-        args.accelerator, args.devices, args.precision
-    )
-    base_hparams["accelerator"] = accelerator
-
-    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    models_root = PROJECT_ROOT / "Models" / f"livebench_{run_timestamp}"
-    results_root = PROJECT_ROOT / "Results" / f"livebench_{run_timestamp}"
-    models_root.mkdir(parents=True, exist_ok=True)
-    results_root.mkdir(parents=True, exist_ok=True)
-
-    runs = ("ebt", "baseline")
-
-    for model_kind in runs:
-        hparams = deepcopy(base_hparams)
-        hparams["model_name"] = model_kind
-
-        lightning_module = LiveBenchEBTModule(hparams, model_kind=model_kind)
-
-        run_models_dir = models_root / model_kind
-        run_results_dir = results_root / model_kind
-        run_models_dir.mkdir(parents=True, exist_ok=True)
-        run_results_dir.mkdir(parents=True, exist_ok=True)
-
-        checkpointing = ModelCheckpoint(
-            dirpath=run_models_dir,
-            filename=f"{model_kind}-{{epoch:02d}}-{{step:05d}}",
-            save_top_k=1,
-            save_last=True,
-            monitor="train_loss",
-            mode="min",
-        )
-
-        logger = CSVLogger(save_dir=str(run_results_dir), name="metrics")
-
-        trainer = pl.Trainer(
-            accelerator=accelerator,
-            devices=devices,
-            max_steps=args.max_steps,
-            max_epochs=args.max_epochs,
-            precision=precision,
-            gradient_clip_val=hparams["gradient_clip_val"],
-            log_every_n_steps=1,
-            callbacks=[checkpointing],
-            enable_checkpointing=True,
-            logger=logger,
-        )
-
-        trainer.fit(lightning_module)
-
-        metrics = {}
-        for key, value in trainer.callback_metrics.items():
-            if isinstance(value, torch.Tensor):
-                metrics[key] = float(value.detach().cpu())
-            elif isinstance(value, (int, float)):
-                metrics[key] = float(value)
-
-        metrics_path = run_results_dir / "final_metrics.json"
-        with metrics_path.open("w", encoding="utf-8") as f:
-            json.dump(metrics, f, indent=2, sort_keys=True)
-
-        serializable_hparams = {
-            key: (value if isinstance(value, (int, float, str, bool)) or value is None else str(value))
-            for key, value in hparams.items()
-        }
-        hparams_path = run_results_dir / "hparams.json"
-        with hparams_path.open("w", encoding="utf-8") as f:
-            json.dump(serializable_hparams, f, indent=2, sort_keys=True)
+def estimate_training_memory_bytes(param_count: int) -> int:
+	# Params + grads + Adam states (m, v) in fp32
+	bytes_per_param = 4
+	param_bytes = param_count * bytes_per_param
+	grad_bytes = param_bytes
+	adam_bytes = param_bytes * 2
+	# Rough activation estimate (very approximate, assumes fp16/bf16 activations)
+	act_bytes = batch_size * block_size * n_embd * 2 * 2
+	return int((param_bytes + grad_bytes + adam_bytes + act_bytes) * memory_safety_factor)
 
 
-if __name__ == "__main__":
-    main()
+def get_available_memory_bytes() -> int | None:
+	if device_type == "cuda" and torch.cuda.is_available():
+		free_bytes, _ = torch.cuda.mem_get_info()
+		return int(free_bytes)
+	# For MPS/CPU, fall back to system available memory
+	try:
+		page_size = os.sysconf("SC_PAGE_SIZE")
+		avail_pages = os.sysconf("SC_AVPHYS_PAGES")
+		return int(page_size * avail_pages)
+	except (ValueError, OSError, AttributeError):
+		return None
+
+
+def handle_oom(error: RuntimeError) -> bool:
+	global batch_size, block_size, tokens_per_iter
+	message = str(error).lower()
+	if "out of memory" not in message and "mps backend out of memory" not in message:
+		return False
+
+	if not auto_reduce_on_oom:
+		return False
+
+	if device_type == "cuda" and torch.cuda.is_available():
+		torch.cuda.empty_cache()
+	elif device_type == "mps" and hasattr(torch, "mps"):
+		torch.mps.empty_cache()
+
+	if batch_size > 1:
+		batch_size = max(1, batch_size // 2)
+		print(f"OOM detected. Reducing batch_size to {batch_size} and retrying...")
+	elif block_size > 64:
+		block_size = max(64, block_size // 2)
+		print(f"OOM detected. Reducing block_size to {block_size} and retrying...")
+	else:
+		return False
+
+	tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
+	print(f"tokens per iteration will be: {tokens_per_iter:,}")
+	return True
+
+if compile:
+	print("compiling the model... (takes a ~minute)")
+	model = torch.compile(model)
+
+if ddp:
+	model = DDP(model, device_ids=[ddp_local_rank])
+
+raw_model = model.module if ddp else model
+train_model = model
+
+if master_process:
+	param_count = count_parameters(raw_model)
+	print(f"model parameters: {param_count:,} ({param_count/1e6:.2f}M)")
+	if check_memory_fit:
+		est_bytes = estimate_training_memory_bytes(param_count)
+		avail_bytes = get_available_memory_bytes()
+		print(f"estimated training memory: {est_bytes/1024**3:.2f} GiB")
+		if avail_bytes is not None:
+			print(f"available memory: {avail_bytes/1024**3:.2f} GiB")
+			if est_bytes > avail_bytes:
+				raise RuntimeError(
+					"Estimated memory exceeds available memory. Reduce batch size, context length, or model size."
+				)
+
+# optimizer
+optimizer = torch.optim.AdamW(raw_model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
+
+# resume
+iter_num = 0
+best_val_loss = 1e9
+if init_from == "resume":
+	ckpt_path = os.path.join(out_dir, "ckpt.pt")
+	checkpoint = torch.load(ckpt_path, map_location=device)
+	raw_model.load_state_dict(checkpoint["model"])
+	optimizer.load_state_dict(checkpoint["optimizer"])
+	iter_num = checkpoint.get("iter_num", 0)
+	best_val_loss = checkpoint.get("best_val_loss", 1e9)
+
+scaler = torch.amp.GradScaler("cuda", enabled=(dtype == "float16" and device_type == "cuda"))
+
+@torch.no_grad()
+def estimate_loss():
+	out = {}
+	train_model.eval()
+	for split in ["train", "val"]:
+		losses = torch.zeros(eval_iters)
+		for k in range(eval_iters):
+			batch = get_batch(split)
+			with ctx:
+				loss_dict = train_model.forward_loss_wrapper(batch, phase="valid")
+				loss = loss_dict["loss"]
+			losses[k] = loss.item()
+		out[split] = losses.mean()
+	train_model.train()
+	return out
+
+def get_lr(it):
+	if it < warmup_iters:
+		return learning_rate * (it + 1) / (warmup_iters + 1)
+	if it > lr_decay_iters:
+		return min_lr
+	decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
+	assert 0 <= decay_ratio <= 1
+	coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+	return min_lr + coeff * (learning_rate - min_lr)
+
+if ddp and torch.distributed.is_initialized():
+	if master_process:
+		ensure_openwebtext_prepared()
+	torch.distributed.barrier()
+else:
+	ensure_openwebtext_prepared()
+
+# training loop
+batch = get_batch("train")
+t0 = time.time()
+local_iter_num = 0
+running_mfu = -1.0
+
+stop_training = False
+
+while True:
+	retries_left = oom_retries
+	while True:
+		try:
+			lr = get_lr(iter_num) if decay_lr else learning_rate
+			for param_group in optimizer.param_groups:
+				param_group["lr"] = lr
+
+			if iter_num % eval_interval == 0 and master_process:
+				losses = estimate_loss()
+				print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+				if losses["val"] < best_val_loss or always_save_checkpoint:
+					best_val_loss = losses["val"]
+					if iter_num > 0:
+						checkpoint = {
+							"model": raw_model.state_dict(),
+							"optimizer": optimizer.state_dict(),
+							"iter_num": iter_num,
+							"best_val_loss": best_val_loss,
+							"config": config,
+						}
+						print(f"saving checkpoint to {out_dir}")
+						torch.save(checkpoint, os.path.join(out_dir, "ckpt.pt"))
+			if iter_num == 0 and eval_only:
+				stop_training = True
+				break
+
+			for micro_step in range(gradient_accumulation_steps):
+				if ddp:
+					model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
+				with ctx:
+					loss_dict = train_model.forward_loss_wrapper(batch, phase="train")
+					loss = loss_dict["loss"] / gradient_accumulation_steps
+				batch = get_batch("train")
+				scaler.scale(loss).backward()
+
+			if grad_clip != 0.0:
+				scaler.unscale_(optimizer)
+				torch.nn.utils.clip_grad_norm_(raw_model.parameters(), grad_clip)
+
+			scaler.step(optimizer)
+			scaler.update()
+			optimizer.zero_grad(set_to_none=True)
+
+			break
+		except RuntimeError as exc:
+			if retries_left > 0 and handle_oom(exc):
+				retries_left -= 1
+				batch = get_batch("train")
+				continue
+			raise
+
+	if stop_training:
+		break
+
+	t1 = time.time()
+	dt = t1 - t0
+	t0 = t1
+	if iter_num % log_interval == 0 and master_process:
+		lossf = loss.item() * gradient_accumulation_steps
+		if local_iter_num >= 5:
+			running_mfu = running_mfu if running_mfu != -1.0 else 0.0
+		print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
+
+	iter_num += 1
+	local_iter_num += 1
+
+	if iter_num > max_iters:
+		break
+
+if ddp:
+	destroy_process_group()

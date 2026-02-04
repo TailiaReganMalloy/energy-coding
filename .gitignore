@@ -5,26 +5,35 @@ __pycache__/
 
 # Virtual environments
 venv/
-.env/
 .venv/
-<<<<<<< HEAD
 env/
+.env
 
 # Large datasets / caches
-livebench_coding/downloads/
-livebench_coding/test/*.arrow
+.hf_cache/
 wandb/
 live_bench/
+livebench_coding/downloads/
+livebench_coding/test/*.arrow
+nanoGPT/data/
+EBT/data/
+data/
+**/*.bin
 
 # Python build artifacts
 *.egg-info/
 dist/
 build/
-=======
->>>>>>> b676cab (Initial commit)
 
 # OS-specific files
 .DS_Store
 
 # Project artifacts
 out.txt
+out/
+out_ebt/
+logs/
+checkpoints/
+**/*.ckpt
+**/*.pt
+Miniconda3-latest-MacOSX-arm64.sh

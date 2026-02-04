@@ -7,3 +7,6 @@
 [submodule "SCE"]
 	path = SCE
 	url = https://github.com/Etamin/SCE.git
+[submodule "nanoGPT"]
+	path = nanoGPT
+	url = https://github.com/karpathy/nanoGPT.git
