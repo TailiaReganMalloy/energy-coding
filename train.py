@@ -14,11 +14,15 @@ import time
 import math
 import pickle
 import runpy
+import warnings
 from contextlib import nullcontext
 from types import SimpleNamespace
 
 import sys
 from pathlib import Path
+
+# Limit CPU thread usage unless explicitly set to avoid oversubscription warnings.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
 
 import numpy as np
 import torch
@@ -45,7 +49,6 @@ def configure_hf_cache(cache_root: Path | None) -> None:
 	os.environ["HF_HOME"] = str(cache_root)
 	os.environ["HF_DATASETS_CACHE"] = str(cache_root / "datasets")
 	os.environ["HF_HUB_CACHE"] = str(cache_root / "hub")
-	os.environ["TRANSFORMERS_CACHE"] = str(cache_root / "transformers")
 	os.environ["XDG_CACHE_HOME"] = str(cache_root)
 
 
@@ -56,6 +59,13 @@ load_env_file(PROJECT_ROOT / ".env")
 hf_cache_env = os.environ.get("HF_CACHE_DIR")
 hf_cache_dir = Path(hf_cache_env).expanduser() if hf_cache_env else (PROJECT_ROOT / ".hf_cache")
 configure_hf_cache(hf_cache_dir)
+
+# Silence known third-party FutureWarnings that are already handled upstream.
+warnings.filterwarnings(
+	"ignore",
+	message=r".*torch\.library\.impl_abstract.*",
+	category=FutureWarning,
+)
 
 from model.nlp.ebt import EBT_NLP
 
@@ -69,6 +79,7 @@ eval_iters = 200
 eval_only = False
 always_save_checkpoint = True
 init_from = "scratch"  # 'scratch' or 'resume'
+resume_latest = False  # if True, resume from the most recent checkpoint in out_dir
 
 # data
 dataset = "openwebtext"
@@ -159,6 +170,25 @@ exec(open(os.path.join("nanoGPT", "configurator.py")).read())
 config = {k: globals()[k] for k in config_keys}
 # -----------------------------------------------------------------------------
 
+def find_latest_checkpoint(output_dir: str) -> str | None:
+	output_path = Path(output_dir)
+	if not output_path.exists():
+		return None
+	ckpt_iter_paths = []
+	for path in output_path.glob("ckpt_iter_*.pt"):
+		stem = path.stem
+		try:
+			iter_str = stem.split("ckpt_iter_", 1)[1]
+			iter_num = int(iter_str)
+			ckpt_iter_paths.append((iter_num, path))
+		except (IndexError, ValueError):
+			continue
+	if ckpt_iter_paths:
+		ckpt_iter_paths.sort(key=lambda item: item[0])
+		return str(ckpt_iter_paths[-1][1])
+	ckpt_path = output_path / "ckpt.pt"
+	return str(ckpt_path) if ckpt_path.exists() else None
+
 data_dir = os.path.abspath(os.path.join(PROJECT_ROOT, data_dir)) if not os.path.isabs(data_dir) else data_dir
 
 # DDP setup
@@ -172,8 +202,13 @@ if ddp:
 	torch.cuda.set_device(device)
 	master_process = ddp_rank == 0
 	seed_offset = ddp_rank
-	assert gradient_accumulation_steps % ddp_world_size == 0
-	gradient_accumulation_steps //= ddp_world_size
+	if gradient_accumulation_steps % ddp_world_size == 0:
+		gradient_accumulation_steps //= ddp_world_size
+	elif master_process:
+		print(
+			"Warning: gradient_accumulation_steps is not divisible by world size; "
+			"treating it as per-rank accumulation."
+		)
 else:
 	master_process = True
 	seed_offset = 0
@@ -389,7 +424,7 @@ if ddp:
 	model = DDP(model, device_ids=[ddp_local_rank])
 
 raw_model = model.module if ddp else model
-train_model = model
+train_model = raw_model
 
 if master_process:
 	param_count = count_parameters(raw_model)
@@ -411,15 +446,44 @@ optimizer = torch.optim.AdamW(raw_model.parameters(), lr=learning_rate, weight_d
 # resume
 iter_num = 0
 best_val_loss = 1e9
+resume_ckpt_path = None
+if resume_latest:
+	init_from = "resume"
+	resume_ckpt_path = find_latest_checkpoint(out_dir)
+	if resume_ckpt_path is None:
+		raise FileNotFoundError(f"No checkpoint found in {out_dir}")
 if init_from == "resume":
-	ckpt_path = os.path.join(out_dir, "ckpt.pt")
-	checkpoint = torch.load(ckpt_path, map_location=device)
+	ckpt_path = resume_ckpt_path or os.path.join(out_dir, "ckpt.pt")
+	checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
 	raw_model.load_state_dict(checkpoint["model"])
 	optimizer.load_state_dict(checkpoint["optimizer"])
 	iter_num = checkpoint.get("iter_num", 0)
 	best_val_loss = checkpoint.get("best_val_loss", 1e9)
+	if resume_latest and isinstance(checkpoint.get("config"), dict):
+		ckpt_config = checkpoint["config"]
+		max_iters = ckpt_config.get("max_iters", max_iters)
+		lr_decay_iters = ckpt_config.get("lr_decay_iters", lr_decay_iters)
+		config["max_iters"] = max_iters
+		config["lr_decay_iters"] = lr_decay_iters
 
 scaler = torch.amp.GradScaler("cuda", enabled=(dtype == "float16" and device_type == "cuda"))
+
+loss_log_path = os.path.join(out_dir, "losses.pkl")
+loss_log = {"eval": [], "train": []}
+if master_process and os.path.exists(loss_log_path):
+	try:
+		with open(loss_log_path, "rb") as f:
+			loaded = pickle.load(f)
+		if isinstance(loaded, dict):
+			loss_log.update({k: list(v) for k, v in loaded.items() if k in loss_log})
+	except Exception:
+		pass
+
+def save_loss_log() -> None:
+	if not master_process:
+		return
+	with open(loss_log_path, "wb") as f:
+		pickle.dump(loss_log, f)
 
 @torch.no_grad()
 def estimate_loss():
@@ -473,6 +537,14 @@ while True:
 			if iter_num % eval_interval == 0 and master_process:
 				losses = estimate_loss()
 				print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+				loss_log["eval"].append(
+					{
+						"iter": iter_num,
+						"train": float(losses["train"]),
+						"val": float(losses["val"]),
+					}
+				)
+				save_loss_log()
 				if losses["val"] < best_val_loss or always_save_checkpoint:
 					best_val_loss = losses["val"]
 					if iter_num > 0:
@@ -485,6 +557,8 @@ while True:
 						}
 						print(f"saving checkpoint to {out_dir}")
 						torch.save(checkpoint, os.path.join(out_dir, "ckpt.pt"))
+						ckpt_iter_path = os.path.join(out_dir, f"ckpt_iter_{iter_num}.pt")
+						torch.save(checkpoint, ckpt_iter_path)
 			if iter_num == 0 and eval_only:
 				stop_training = True
 				break
@@ -525,6 +599,8 @@ while True:
 		if local_iter_num >= 5:
 			running_mfu = running_mfu if running_mfu != -1.0 else 0.0
 		print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
+		loss_log["train"].append({"iter": iter_num, "loss": float(lossf)})
+		save_loss_log()
 
 	iter_num += 1
 	local_iter_num += 1
