@@ -37,3 +37,4 @@ checkpoints/
 **/*.ckpt
 **/*.pt
 Miniconda3-latest-MacOSX-arm64.sh
+*.tar.gz
