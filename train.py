@@ -55,6 +55,7 @@ def configure_hf_cache(cache_root: Path | None) -> None:
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT / "EBT"))
 
+load_env_file(Path("/.env"))
 load_env_file(PROJECT_ROOT / ".env")
 hf_cache_env = os.environ.get("HF_CACHE_DIR")
 hf_cache_dir = Path(hf_cache_env).expanduser() if hf_cache_env else (PROJECT_ROOT / ".hf_cache")
@@ -68,6 +69,11 @@ warnings.filterwarnings(
 )
 
 from model.nlp.ebt import EBT_NLP
+
+WANDB_API_KEY = os.environ.get("WANDB_API_KEY")
+WANDB_ENTITY = os.environ.get("WANDB_ENTITY")
+WANDB_PROJECT = os.environ.get("WANDB_PROJECT")
+wandb_run = None
 
 # -----------------------------------------------------------------------------
 # default config values designed to mirror nanoGPT training loop behavior
@@ -115,6 +121,17 @@ backend = "nccl"
 device = "auto"  # 'auto', 'cuda', 'mps', or 'cpu'
 dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
 compile = False
+
+# Vast.ai serverless (optional)
+train_vast_serverless = False
+vast_endpoint_name = "yhqdfymr"
+vast_model_name = "Qwen/Qwen3-8B"
+vast_max_tokens = 256
+vast_temperature = 0.7
+vast_top_k = 20
+vast_top_p = 0.4
+vast_stream = False
+vast_prompt_max_chars = 1000
 
 # memory check
 check_memory_fit = True
@@ -169,6 +186,18 @@ config_keys = [k for k, v in globals().items() if not k.startswith("_") and isin
 exec(open(os.path.join("nanoGPT", "configurator.py")).read())
 config = {k: globals()[k] for k in config_keys}
 # -----------------------------------------------------------------------------
+
+# Ensure head_dim is even for rotary embeddings.
+if n_embd % n_head != 0:
+	raise ValueError(f"n_embd ({n_embd}) must be divisible by n_head ({n_head}).")
+head_dim = n_embd // n_head
+if head_dim % 2 != 0:
+	new_n_embd = n_head * (head_dim + 1)
+	print(
+		f"Adjusting n_embd from {n_embd} to {new_n_embd} so head_dim is even for rotary embeddings."
+	)
+	n_embd = new_n_embd
+	config["n_embd"] = n_embd
 
 def find_latest_checkpoint(output_dir: str) -> str | None:
 	output_path = Path(output_dir)
@@ -252,6 +281,45 @@ else:
 ptdtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[dtype]
 ctx = nullcontext() if device_type in ("cpu", "mps") else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
+if train_vast_serverless:
+	if not os.environ.get("VAST_API_KEY"):
+		raise RuntimeError("VAST_API_KEY must be set when train_vast_serverless=True")
+	if master_process:
+		print("Vast serverless mode enabled for eval-time requests.")
+		print(f"VAST endpoint: {vast_endpoint_name}")
+		print(f"VAST model: {vast_model_name}")
+
+if master_process and WANDB_API_KEY:
+	try:
+		import wandb
+		wandb_run = wandb.init(
+			entity=WANDB_ENTITY,
+			project=WANDB_PROJECT,
+			config={
+				"dataset": dataset,
+				"data_dir": data_dir,
+				"out_dir": out_dir,
+				"batch_size": batch_size,
+				"block_size": block_size,
+				"n_layer": n_layer,
+				"n_head": n_head,
+				"n_embd": n_embd,
+				"learning_rate": learning_rate,
+				"max_iters": max_iters,
+				"gradient_accumulation_steps": gradient_accumulation_steps,
+				"device": device,
+				"dtype": dtype,
+				"mcmc_num_steps": mcmc_num_steps,
+				"mcmc_step_size": mcmc_step_size,
+				"train_vast_serverless": train_vast_serverless,
+				"vast_endpoint_name": vast_endpoint_name,
+				"vast_model_name": vast_model_name,
+			},
+		)
+	except Exception as exc:
+		print(f"W&B init failed, continuing without logging: {exc}")
+		wandb_run = None
+
 def ensure_openwebtext_prepared():
 	train_bin = os.path.join(data_dir, "train.bin")
 	val_bin = os.path.join(data_dir, "val.bin")
@@ -284,6 +352,52 @@ def ensure_openwebtext_prepared():
 		raise RuntimeError(
 			"Failed to prepare OpenWebText. Check HF cache permissions or set HF_HOME/HF_DATASETS_CACHE."
 		) from exc
+
+
+def build_prompt_from_batch(batch, max_chars: int) -> str:
+	try:
+		import tiktoken
+		enc = tiktoken.get_encoding("gpt2")
+		ids = batch["input_ids"][0, 0].tolist()
+		text = enc.decode(ids)
+		return text[:max_chars]
+	except Exception:
+		return " ".join(str(x) for x in batch["input_ids"][0, 0].tolist())[:max_chars]
+
+
+def run_vast_serverless_request(prompt: str) -> str:
+	import asyncio
+	from vastai import Serverless
+
+	async def _call():
+		async with Serverless() as client:
+			endpoint = await client.get_endpoint(name=vast_endpoint_name)
+			payload = {
+				"input": {
+					"model": vast_model_name,
+					"prompt": prompt,
+					"max_tokens": vast_max_tokens,
+					"temperature": vast_temperature,
+					"top_k": vast_top_k,
+					"top_p": vast_top_p,
+					"stream": vast_stream,
+				}
+			}
+			response = await endpoint.request(
+				"/v1/completions",
+				payload,
+				cost=vast_max_tokens,
+				stream=vast_stream,
+			)
+			if vast_stream:
+				stream = response["response"]
+				chunks = []
+				async for event in stream:
+					chunks.append(event["choices"][0].get("text", ""))
+				return "".join(chunks)
+			return response["response"]["choices"][0]["text"]
+
+	return asyncio.run(_call())
 
 
 # data loader (openwebtext binary, same as nanoGPT)
@@ -443,6 +557,21 @@ if master_process:
 # optimizer
 optimizer = torch.optim.AdamW(raw_model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
 
+def get_uncompiled_model(model_to_use):
+	if hasattr(model_to_use, "_orig_mod"):
+		return model_to_use._orig_mod
+	return model_to_use
+
+
+def get_model_state_dict(model_to_use):
+	return get_uncompiled_model(model_to_use).state_dict()
+
+
+def normalize_state_dict_keys(state_dict):
+	if not any(key.startswith("_orig_mod.") for key in state_dict):
+		return state_dict
+	return {key.replace("_orig_mod.", "", 1): value for key, value in state_dict.items()}
+
 # resume
 iter_num = 0
 best_val_loss = 1e9
@@ -451,11 +580,14 @@ if resume_latest:
 	init_from = "resume"
 	resume_ckpt_path = find_latest_checkpoint(out_dir)
 	if resume_ckpt_path is None:
-		raise FileNotFoundError(f"No checkpoint found in {out_dir}")
+		print(f"No checkpoint found in {out_dir}. Starting a new run.")
+		init_from = "scratch"
 if init_from == "resume":
 	ckpt_path = resume_ckpt_path or os.path.join(out_dir, "ckpt.pt")
 	checkpoint = torch.load(ckpt_path, map_location=device, weights_only=False)
-	raw_model.load_state_dict(checkpoint["model"])
+	model_state = normalize_state_dict_keys(checkpoint["model"])
+	load_target = get_uncompiled_model(raw_model)
+	load_target.load_state_dict(model_state, strict=False)
 	optimizer.load_state_dict(checkpoint["optimizer"])
 	iter_num = checkpoint.get("iter_num", 0)
 	best_val_loss = checkpoint.get("best_val_loss", 1e9)
@@ -544,12 +676,36 @@ while True:
 						"val": float(losses["val"]),
 					}
 				)
+				if train_vast_serverless:
+					try:
+						prompt = build_prompt_from_batch(batch, vast_prompt_max_chars)
+						completion = run_vast_serverless_request(prompt)
+						print("VAST completion sample:")
+						print(completion)
+						if wandb_run is not None:
+							wandb_run.log(
+								{
+									"iter": iter_num,
+									"vast_completion": completion,
+								},
+							)
+					except Exception as exc:
+						print(f"VAST serverless request failed: {exc}")
+				if wandb_run is not None:
+					wandb_run.log(
+						{
+							"iter": iter_num,
+							"train_loss": float(losses["train"]),
+							"val_loss": float(losses["val"]),
+							"lr": lr,
+						},
+					)
 				save_loss_log()
 				if losses["val"] < best_val_loss or always_save_checkpoint:
 					best_val_loss = losses["val"]
 					if iter_num > 0:
 						checkpoint = {
-							"model": raw_model.state_dict(),
+							"model": get_model_state_dict(raw_model),
 							"optimizer": optimizer.state_dict(),
 							"iter_num": iter_num,
 							"best_val_loss": best_val_loss,
@@ -600,6 +756,16 @@ while True:
 			running_mfu = running_mfu if running_mfu != -1.0 else 0.0
 		print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
 		loss_log["train"].append({"iter": iter_num, "loss": float(lossf)})
+		if wandb_run is not None:
+			wandb_run.log(
+				{
+					"iter": iter_num,
+					"loss": float(lossf),
+					"time_ms": dt * 1000.0,
+					"mfu": running_mfu * 100.0,
+					"lr": lr,
+				},
+			)
 		save_loss_log()
 
 	iter_num += 1
@@ -610,3 +776,6 @@ while True:
 
 if ddp:
 	destroy_process_group()
+
+if wandb_run is not None:
+	wandb_run.finish()

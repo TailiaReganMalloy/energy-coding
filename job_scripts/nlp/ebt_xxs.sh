@@ -1,0 +1,22 @@
+ python train.py \
+    --device=mps \
+    --compile=False \
+    --dataset=openwebtext \
+    --data_dir=nanoGPT/data/openwebtext \
+    --out_dir=out_ebt_xxs \
+    --resume_latest=True \
+    --max_iters=1000000 \
+    --lr_decay_iters=1000000 \
+    --warmup_iters=2000 \
+    --eval_interval=10000 \
+    --batch_size=4 \
+    --gradient_accumulation_steps=1 \
+    --block_size=4 \
+    --n_layer=4 \
+    --n_head=4 \
+    --n_embd=4 \
+    --tokenizer=gpt2 \
+    --mcmc_num_steps=4 \
+    --mcmc_step_size=1.0 \
+    --normalize_initial_condition=True \
+    --clamp_futures_grad=True

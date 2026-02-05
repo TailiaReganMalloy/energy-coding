@@ -10,8 +10,16 @@ cd "$ROOT_DIR"
 # nembed 1536
 if [[ "$(uname -s)" == "Darwin" ]]; then
   # macOS: DDP/torchrun is not supported; use a single process (MPS if available)
+  DEVICE_FLAG="--device=cpu"
+  if python - <<'PY'
+import torch
+print(int(hasattr(torch.backends, "mps") and torch.backends.mps.is_available()))
+PY
+  then
+    DEVICE_FLAG="--device=mps"
+  fi
   python train.py \
-    --device=mps \
+    "$DEVICE_FLAG" \
     --compile=False \
     --dataset=openwebtext \
     --data_dir=nanoGPT/data/openwebtext \
