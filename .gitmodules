@@ -9,7 +9,7 @@
 	url = https://github.com/Etamin/SCE.git
 [submodule "nanoGPT"]
 	path = nanoGPT
-	url = https://github.com/karpathy/nanoGPT.git
+	url = https://github.com/TailiaReganMalloy/nanoGPT.git
 [submodule "nanochat"]
 	path = nanochat
-	url = https://github.com/karpathy/nanochat.git
+	url = https://github.com/TailiaReganMalloy/nanochat.git

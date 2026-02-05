@@ -1,0 +1,1 @@
+git submodule foreach 'git add -A && git commit -m "update" || true && git push' && git add -A && git commit -m "update" || true && git push
