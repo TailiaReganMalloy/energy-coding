@@ -1,0 +1,461 @@
+Overriding: dataset = openwebtext
+Overriding: data_dir = nanoGPT/data/openwebtext
+Overriding: out_dir = out_ebt_openwebtext
+Overriding: resume_latest = True
+Overriding: max_iters = 1000000
+Overriding: lr_decay_iters = 1000000
+Overriding: warmup_iters = 2000
+Overriding: eval_interval = 5000
+Overriding: batch_size = 2
+Overriding: gradient_accumulation_steps = 2
+Overriding: block_size = 512
+Overriding: n_layer = 24
+Overriding: n_head = 16
+Overriding: n_embd = 1024
+Overriding: tokenizer = gpt2
+Overriding: mcmc_num_steps = 2
+Overriding: mcmc_step_size = 0.25
+Overriding: normalize_initial_condition = True
+Overriding: clamp_futures_grad = True
+tokens per iteration will be: 2,048
+wandb: Using wandb-core as the SDK backend. Please refer to https://wandb.me/wandb-core for more information.
+wandb: Currently logged in as: tailiamalloy (university-of-luxembourg-trux). Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.18.0
+wandb: Run data is saved locally in /home/tailiamalloy_gmail_com/energy-coding/wandb/run-20260217_211558-96y3x8p7
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run cerulean-frog-14
+wandb: ⭐️ View project at https://wandb.ai/university-of-luxembourg-trux/energy-coder
+wandb: 🚀 View run at https://wandb.ai/university-of-luxembourg-trux/energy-coder/runs/96y3x8p7
+instance-20260217-135005:125498:125498 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to ens7
+instance-20260217-135005:125498:125498 [0] NCCL INFO Bootstrap : Using ens7:10.128.0.12<0>
+instance-20260217-135005:125498:125498 [0] NCCL INFO NET/Plugin : dlerror=libnccl-net.so: cannot open shared object file: No such file or directory No plugin found (libnccl-net.so), using internal implementation
+instance-20260217-135005:125498:125498 [0] NCCL INFO cudaDriverVersion 12020
+NCCL version 2.20.5+cuda12.4
+instance-20260217-135005:125498:125657 [0] NCCL INFO NCCL_IB_DISABLE set by environment to 1.
+instance-20260217-135005:125498:125657 [0] NCCL INFO NCCL_SOCKET_IFNAME set by environment to ens7
+instance-20260217-135005:125498:125657 [0] NCCL INFO NET/Socket : Using [0]ens7:10.128.0.12<0>
+instance-20260217-135005:125498:125657 [0] NCCL INFO Using non-device net plugin version 0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Using network Socket
+instance-20260217-135005:125498:125657 [0] NCCL INFO comm 0x1f0300f0 rank 0 nranks 1 cudaDev 0 nvmlDev 0 busId 30 commId 0xc3f123aec43b3ab2 - Init START
+instance-20260217-135005:125498:125657 [0] NCCL INFO Setting affinity for GPU 0 to ffff,ffffffff
+instance-20260217-135005:125498:125657 [0] NCCL INFO comm 0x1f0300f0 rank 0 nRanks 1 nNodes 1 localRanks 1 localRank 0 MNNVL 0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 00/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 01/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 02/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 03/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 04/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 05/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 06/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 07/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 08/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 09/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 10/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 11/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 12/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 13/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 14/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 15/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 16/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 17/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 18/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 19/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 20/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 21/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 22/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 23/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 24/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 25/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 26/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 27/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 28/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 29/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 30/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Channel 31/32 :    0
+instance-20260217-135005:125498:125657 [0] NCCL INFO Trees [0] -1/-1/-1->0->-1 [1] -1/-1/-1->0->-1 [2] -1/-1/-1->0->-1 [3] -1/-1/-1->0->-1 [4] -1/-1/-1->0->-1 [5] -1/-1/-1->0->-1 [6] -1/-1/-1->0->-1 [7] -1/-1/-1->0->-1 [8] -1/-1/-1->0->-1 [9] -1/-1/-1->0->-1 [10] -1/-1/-1->0->-1 [11] -1/-1/-1->0->-1 [12] -1/-1/-1->0->-1 [13] -1/-1/-1->0->-1 [14] -1/-1/-1->0->-1 [15] -1/-1/-1->0->-1 [16] -1/-1/-1->0->-1 [17] -1/-1/-1->0->-1 [18] -1/-1/-1->0->-1 [19] -1/-1/-1->0->-1 [20] -1/-1/-1->0->-1 [21] -1/-1/-1->0->-1 [22] -1/-1/-1->0->-1 [23] -1/-1/-1->0->-1 [24] -1/-1/-1->0->-1 [25] -1/-1/-1->0->-1 [26] -1/-1/-1->0->-1 [27] -1/-1/-1->0->-1 [28] -1/-1/-1->0->-1 [29] -1/-1/-1->0->-1 [30] -1/-1/-1->0->-1 [31] -1/-1/-1->0->-1
+instance-20260217-135005:125498:125657 [0] NCCL INFO P2P Chunksize set to 131072
+instance-20260217-135005:125498:125657 [0] NCCL INFO Connected all rings
+instance-20260217-135005:125498:125657 [0] NCCL INFO Connected all trees
+instance-20260217-135005:125498:125657 [0] NCCL INFO 32 coll channels, 0 collnet channels, 0 nvls channels, 32 p2p channels, 32 p2p channels per peer
+instance-20260217-135005:125498:125657 [0] NCCL INFO comm 0x1f0300f0 rank 0 nranks 1 cudaDev 0 nvmlDev 0 busId 30 commId 0xc3f123aec43b3ab2 - Init COMPLETE
+model parameters: 279,138,306 (279.14M)
+estimated training memory: 5.00 GiB
+available memory: 18.56 GiB
+OOM detected. Reducing batch_size to 1 and retrying...
+tokens per iteration will be: 1,024
+step 910000: train loss 4.8911, val loss 4.8689
+saving checkpoint to out_ebt_openwebtext
+iter 910000: loss 4.5972, time 178904.07ms, mfu -100.00%
+iter 910001: loss 4.2482, time 2530.37ms, mfu -100.00%
+iter 910002: loss 5.0877, time 2542.17ms, mfu -100.00%
+iter 910003: loss 4.9232, time 2506.79ms, mfu -100.00%
+iter 910004: loss 4.8833, time 2487.94ms, mfu -100.00%
+iter 910005: loss 4.2855, time 2211.89ms, mfu 0.00%
+iter 910006: loss 4.3490, time 2053.14ms, mfu 0.00%
+iter 910007: loss 4.9878, time 2042.75ms, mfu 0.00%
+iter 910008: loss 5.1885, time 2047.51ms, mfu 0.00%
+iter 910009: loss 4.4346, time 2042.74ms, mfu 0.00%
+iter 910010: loss 5.2751, time 2042.50ms, mfu 0.00%
+iter 910011: loss 5.5837, time 2072.82ms, mfu 0.00%
+iter 910012: loss 6.4175, time 2044.03ms, mfu 0.00%
+iter 910013: loss 5.6650, time 2047.36ms, mfu 0.00%
+iter 910014: loss 6.1229, time 2043.64ms, mfu 0.00%
+iter 910015: loss 6.8581, time 2051.33ms, mfu 0.00%
+iter 910016: loss 5.8916, time 2061.42ms, mfu 0.00%
+iter 910017: loss 5.8760, time 2044.46ms, mfu 0.00%
+iter 910018: loss 6.2422, time 2049.91ms, mfu 0.00%
+iter 910019: loss 5.3507, time 2045.83ms, mfu 0.00%
+iter 910020: loss 6.2569, time 2046.46ms, mfu 0.00%
+iter 910021: loss 5.6816, time 2055.85ms, mfu 0.00%
+iter 910022: loss 6.1073, time 2042.28ms, mfu 0.00%
+iter 910023: loss 6.6439, time 2046.49ms, mfu 0.00%
+iter 910024: loss 7.0089, time 2047.36ms, mfu 0.00%
+iter 910025: loss 5.1819, time 2046.42ms, mfu 0.00%
+iter 910026: loss 6.9499, time 2059.47ms, mfu 0.00%
+iter 910027: loss 5.8366, time 2057.72ms, mfu 0.00%
+iter 910028: loss 4.4432, time 2041.95ms, mfu 0.00%
+iter 910029: loss 5.4200, time 2042.78ms, mfu 0.00%
+iter 910030: loss 5.5244, time 2042.09ms, mfu 0.00%
+iter 910031: loss 5.2595, time 2058.68ms, mfu 0.00%
+iter 910032: loss 5.4216, time 2040.03ms, mfu 0.00%
+iter 910033: loss 5.6641, time 2041.23ms, mfu 0.00%
+iter 910034: loss 4.8523, time 2040.59ms, mfu 0.00%
+iter 910035: loss 5.6872, time 2044.43ms, mfu 0.00%
+iter 910036: loss 4.5596, time 2054.16ms, mfu 0.00%
+iter 910037: loss 5.4481, time 2031.89ms, mfu 0.00%
+iter 910038: loss 5.7405, time 2039.33ms, mfu 0.00%
+iter 910039: loss 6.8842, time 2038.35ms, mfu 0.00%
+iter 910040: loss 6.8347, time 2060.89ms, mfu 0.00%
+iter 910041: loss 4.9931, time 2042.94ms, mfu 0.00%
+iter 910042: loss 5.4029, time 2038.56ms, mfu 0.00%
+iter 910043: loss 6.3448, time 2053.12ms, mfu 0.00%
+iter 910044: loss 6.4918, time 2045.13ms, mfu 0.00%
+iter 910045: loss 6.3782, time 2058.81ms, mfu 0.00%
+iter 910046: loss 5.4855, time 2039.51ms, mfu 0.00%
+iter 910047: loss 4.8519, time 2039.56ms, mfu 0.00%
+iter 910048: loss 6.6245, time 2033.65ms, mfu 0.00%
+iter 910049: loss 8.3204, time 2033.59ms, mfu 0.00%
+iter 910050: loss 5.6871, time 2057.01ms, mfu 0.00%
+iter 910051: loss 6.2032, time 2049.81ms, mfu 0.00%
+iter 910052: loss 5.8386, time 2041.43ms, mfu 0.00%
+iter 910053: loss 5.5616, time 2044.36ms, mfu 0.00%
+iter 910054: loss 4.9721, time 2039.36ms, mfu 0.00%
+iter 910055: loss 5.8907, time 2061.78ms, mfu 0.00%
+iter 910056: loss 5.6005, time 2043.74ms, mfu 0.00%
+iter 910057: loss 6.3579, time 2042.46ms, mfu 0.00%
+iter 910058: loss 6.7905, time 2041.32ms, mfu 0.00%
+iter 910059: loss 5.9599, time 2053.29ms, mfu 0.00%
+iter 910060: loss 7.1070, time 2061.50ms, mfu 0.00%
+iter 910061: loss 5.2262, time 2040.84ms, mfu 0.00%
+iter 910062: loss 5.2538, time 2041.30ms, mfu 0.00%
+iter 910063: loss 6.2989, time 2046.58ms, mfu 0.00%
+iter 910064: loss 4.5636, time 2038.06ms, mfu 0.00%
+iter 910065: loss 4.5615, time 2056.06ms, mfu 0.00%
+iter 910066: loss 5.3632, time 2038.77ms, mfu 0.00%
+iter 910067: loss 5.0765, time 2040.04ms, mfu 0.00%
+iter 910068: loss 5.0941, time 2042.46ms, mfu 0.00%
+iter 910069: loss 4.3900, time 2037.03ms, mfu 0.00%
+iter 910070: loss 4.6607, time 2061.29ms, mfu 0.00%
+iter 910071: loss 4.5677, time 2041.18ms, mfu 0.00%
+iter 910072: loss 5.3089, time 2036.44ms, mfu 0.00%
+iter 910073: loss 6.6865, time 2038.84ms, mfu 0.00%
+iter 910074: loss 6.7397, time 2041.47ms, mfu 0.00%
+iter 910075: loss 5.4853, time 2082.70ms, mfu 0.00%
+iter 910076: loss 7.5221, time 2038.16ms, mfu 0.00%
+iter 910077: loss 7.9240, time 2042.02ms, mfu 0.00%
+iter 910078: loss 5.9589, time 2040.28ms, mfu 0.00%
+iter 910079: loss 6.6455, time 2040.75ms, mfu 0.00%
+iter 910080: loss 5.7803, time 2064.50ms, mfu 0.00%
+iter 910081: loss 5.5126, time 2042.37ms, mfu 0.00%
+iter 910082: loss 5.1162, time 2043.61ms, mfu 0.00%
+iter 910083: loss 5.3921, time 2037.84ms, mfu 0.00%
+iter 910084: loss 6.5297, time 2054.48ms, mfu 0.00%
+iter 910085: loss 5.0823, time 2045.58ms, mfu 0.00%
+iter 910086: loss 6.1687, time 2039.39ms, mfu 0.00%
+iter 910087: loss 5.5518, time 2041.08ms, mfu 0.00%
+iter 910088: loss 5.4079, time 2040.22ms, mfu 0.00%
+iter 910089: loss 5.6314, time 2053.96ms, mfu 0.00%
+iter 910090: loss 4.8847, time 2042.97ms, mfu 0.00%
+iter 910091: loss 5.6563, time 2039.25ms, mfu 0.00%
+iter 910092: loss 5.9466, time 2041.18ms, mfu 0.00%
+iter 910093: loss 5.9850, time 2037.63ms, mfu 0.00%
+iter 910094: loss 5.6745, time 2053.65ms, mfu 0.00%
+iter 910095: loss 6.0830, time 2043.92ms, mfu 0.00%
+iter 910096: loss 6.6514, time 2038.20ms, mfu 0.00%
+iter 910097: loss 7.0349, time 2042.41ms, mfu 0.00%
+iter 910098: loss 5.9912, time 2034.98ms, mfu 0.00%
+iter 910099: loss 6.8480, time 2068.18ms, mfu 0.00%
+iter 910100: loss 6.3133, time 2043.32ms, mfu 0.00%
+iter 910101: loss 7.0452, time 2041.92ms, mfu 0.00%
+iter 910102: loss 6.1333, time 2037.79ms, mfu 0.00%
+iter 910103: loss 6.7886, time 2035.16ms, mfu 0.00%
+iter 910104: loss 6.2680, time 2058.64ms, mfu 0.00%
+iter 910105: loss 7.4605, time 2037.79ms, mfu 0.00%
+iter 910106: loss 6.2116, time 2037.60ms, mfu 0.00%
+iter 910107: loss 5.7017, time 2048.62ms, mfu 0.00%
+iter 910108: loss 5.5635, time 2035.63ms, mfu 0.00%
+iter 910109: loss 4.7164, time 2056.35ms, mfu 0.00%
+iter 910110: loss 5.2578, time 2041.28ms, mfu 0.00%
+iter 910111: loss 5.8349, time 2036.87ms, mfu 0.00%
+iter 910112: loss 5.0253, time 2191.01ms, mfu 0.00%
+iter 910113: loss 7.4857, time 2040.69ms, mfu 0.00%
+iter 910114: loss 4.7760, time 2068.45ms, mfu 0.00%
+iter 910115: loss 6.5274, time 2046.23ms, mfu 0.00%
+iter 910116: loss 7.6562, time 2035.85ms, mfu 0.00%
+iter 910117: loss 5.6593, time 2042.50ms, mfu 0.00%
+iter 910118: loss 5.7219, time 2039.14ms, mfu 0.00%
+iter 910119: loss 4.9715, time 2061.07ms, mfu 0.00%
+iter 910120: loss 5.8976, time 2038.36ms, mfu 0.00%
+iter 910121: loss 7.4441, time 2038.36ms, mfu 0.00%
+iter 910122: loss 6.0537, time 2044.40ms, mfu 0.00%
+iter 910123: loss 6.3724, time 2052.27ms, mfu 0.00%
+iter 910124: loss 6.2810, time 2044.94ms, mfu 0.00%
+iter 910125: loss 5.9097, time 2041.43ms, mfu 0.00%
+iter 910126: loss 5.4813, time 2040.31ms, mfu 0.00%
+iter 910127: loss 6.1417, time 2042.67ms, mfu 0.00%
+iter 910128: loss 5.8492, time 2048.36ms, mfu 0.00%
+iter 910129: loss 5.1044, time 2041.48ms, mfu 0.00%
+iter 910130: loss 4.7331, time 2033.30ms, mfu 0.00%
+iter 910131: loss 5.3102, time 2039.51ms, mfu 0.00%
+iter 910132: loss 5.1408, time 2041.95ms, mfu 0.00%
+iter 910133: loss 5.3160, time 2048.93ms, mfu 0.00%
+iter 910134: loss 5.7574, time 2040.44ms, mfu 0.00%
+iter 910135: loss 6.1254, time 2035.25ms, mfu 0.00%
+iter 910136: loss 5.1367, time 2036.07ms, mfu 0.00%
+iter 910137: loss 6.1378, time 2041.88ms, mfu 0.00%
+iter 910138: loss 5.6913, time 2057.59ms, mfu 0.00%
+iter 910139: loss 5.5131, time 2053.88ms, mfu 0.00%
+iter 910140: loss 5.9903, time 2030.13ms, mfu 0.00%
+iter 910141: loss 5.9241, time 2033.94ms, mfu 0.00%
+iter 910142: loss 6.4738, time 2036.78ms, mfu 0.00%
+iter 910143: loss 5.7841, time 2057.76ms, mfu 0.00%
+iter 910144: loss 6.7504, time 2042.12ms, mfu 0.00%
+iter 910145: loss 7.4348, time 2041.38ms, mfu 0.00%
+iter 910146: loss 5.9569, time 2036.02ms, mfu 0.00%
+iter 910147: loss 6.0188, time 2043.49ms, mfu 0.00%
+iter 910148: loss 5.9281, time 2054.72ms, mfu 0.00%
+iter 910149: loss 5.2064, time 2033.13ms, mfu 0.00%
+iter 910150: loss 6.3886, time 2033.68ms, mfu 0.00%
+iter 910151: loss 5.6161, time 2036.57ms, mfu 0.00%
+iter 910152: loss 5.8906, time 2034.87ms, mfu 0.00%
+iter 910153: loss 4.6442, time 2055.97ms, mfu 0.00%
+iter 910154: loss 4.7687, time 2037.27ms, mfu 0.00%
+iter 910155: loss 5.2871, time 2039.91ms, mfu 0.00%
+iter 910156: loss 4.8602, time 2032.59ms, mfu 0.00%
+iter 910157: loss 5.9693, time 2038.32ms, mfu 0.00%
+iter 910158: loss 4.2844, time 2050.61ms, mfu 0.00%
+iter 910159: loss 5.2311, time 2042.48ms, mfu 0.00%
+iter 910160: loss 6.0815, time 2036.50ms, mfu 0.00%
+iter 910161: loss 7.6767, time 2036.36ms, mfu 0.00%
+iter 910162: loss 6.4370, time 2040.56ms, mfu 0.00%
+iter 910163: loss 6.7067, time 2060.74ms, mfu 0.00%
+iter 910164: loss 6.0576, time 2038.07ms, mfu 0.00%
+iter 910165: loss 7.6940, time 2033.21ms, mfu 0.00%
+iter 910166: loss 6.6805, time 2040.87ms, mfu 0.00%
+iter 910167: loss 6.2280, time 2037.37ms, mfu 0.00%
+iter 910168: loss 5.9237, time 2055.96ms, mfu 0.00%
+iter 910169: loss 6.8527, time 2041.90ms, mfu 0.00%
+iter 910170: loss 6.0611, time 2033.86ms, mfu 0.00%
+iter 910171: loss 5.5097, time 2043.57ms, mfu 0.00%
+iter 910172: loss 5.4035, time 2049.16ms, mfu 0.00%
+iter 910173: loss 4.4333, time 2036.90ms, mfu 0.00%
+iter 910174: loss 5.7418, time 2035.30ms, mfu 0.00%
+iter 910175: loss 5.3045, time 2031.23ms, mfu 0.00%
+iter 910176: loss 4.3147, time 2032.81ms, mfu 0.00%
+iter 910177: loss 4.8325, time 2047.98ms, mfu 0.00%
+iter 910178: loss 5.4325, time 2035.27ms, mfu 0.00%
+iter 910179: loss 5.4015, time 2041.93ms, mfu 0.00%
+iter 910180: loss 5.9780, time 2036.45ms, mfu 0.00%
+iter 910181: loss 6.7757, time 2039.32ms, mfu 0.00%
+iter 910182: loss 6.5494, time 2048.96ms, mfu 0.00%
+iter 910183: loss 6.8613, time 2031.49ms, mfu 0.00%
+iter 910184: loss 5.9114, time 2030.41ms, mfu 0.00%
+iter 910185: loss 5.9113, time 2034.87ms, mfu 0.00%
+iter 910186: loss 6.9778, time 2031.95ms, mfu 0.00%
+iter 910187: loss 5.5348, time 2050.18ms, mfu 0.00%
+iter 910188: loss 6.4111, time 2047.22ms, mfu 0.00%
+iter 910189: loss 4.9592, time 2028.60ms, mfu 0.00%
+iter 910190: loss 6.0243, time 2029.09ms, mfu 0.00%
+iter 910191: loss 6.0871, time 2031.63ms, mfu 0.00%
+iter 910192: loss 5.2739, time 2049.77ms, mfu 0.00%
+iter 910193: loss 5.9416, time 2025.75ms, mfu 0.00%
+iter 910194: loss 5.6857, time 2034.12ms, mfu 0.00%
+iter 910195: loss 6.0222, time 2025.76ms, mfu 0.00%
+iter 910196: loss 5.9874, time 2030.26ms, mfu 0.00%
+iter 910197: loss 5.2643, time 2052.44ms, mfu 0.00%
+iter 910198: loss 5.4047, time 2030.56ms, mfu 0.00%
+iter 910199: loss 5.4985, time 2028.52ms, mfu 0.00%
+iter 910200: loss 5.1922, time 2028.32ms, mfu 0.00%
+iter 910201: loss 5.5433, time 2030.32ms, mfu 0.00%
+iter 910202: loss 6.3410, time 2045.04ms, mfu 0.00%
+iter 910203: loss 5.1659, time 2035.51ms, mfu 0.00%
+iter 910204: loss 6.7894, time 2061.80ms, mfu 0.00%
+iter 910205: loss 5.6540, time 2025.41ms, mfu 0.00%
+iter 910206: loss 4.8402, time 2029.87ms, mfu 0.00%
+iter 910207: loss 7.0988, time 2039.06ms, mfu 0.00%
+iter 910208: loss 6.2246, time 2021.93ms, mfu 0.00%
+iter 910209: loss 6.6573, time 2021.00ms, mfu 0.00%
+iter 910210: loss 6.3668, time 2025.68ms, mfu 0.00%
+iter 910211: loss 5.7493, time 2017.43ms, mfu 0.00%
+iter 910212: loss 4.9210, time 2046.53ms, mfu 0.00%
+iter 910213: loss 5.7196, time 2021.80ms, mfu 0.00%
+iter 910214: loss 7.0466, time 2016.18ms, mfu 0.00%
+iter 910215: loss 5.5299, time 2014.66ms, mfu 0.00%
+iter 910216: loss 5.5497, time 2021.14ms, mfu 0.00%
+iter 910217: loss 5.1364, time 2031.98ms, mfu 0.00%
+iter 910218: loss 5.8663, time 2011.01ms, mfu 0.00%
+iter 910219: loss 5.4265, time 2017.36ms, mfu 0.00%
+iter 910220: loss 5.9765, time 2045.81ms, mfu 0.00%
+iter 910221: loss 4.4195, time 2015.58ms, mfu 0.00%
+iter 910222: loss 5.2607, time 2042.29ms, mfu 0.00%
+iter 910223: loss 5.9848, time 2068.61ms, mfu 0.00%
+iter 910224: loss 5.4567, time 2029.69ms, mfu 0.00%
+iter 910225: loss 5.7912, time 2030.62ms, mfu 0.00%
+iter 910226: loss 5.8500, time 2032.30ms, mfu 0.00%
+iter 910227: loss 6.0504, time 2054.65ms, mfu 0.00%
+iter 910228: loss 5.7549, time 2027.40ms, mfu 0.00%
+iter 910229: loss 6.1409, time 2027.69ms, mfu 0.00%
+iter 910230: loss 6.0723, time 2025.87ms, mfu 0.00%
+iter 910231: loss 6.9179, time 2034.63ms, mfu 0.00%
+iter 910232: loss 4.3459, time 2033.78ms, mfu 0.00%
+iter 910233: loss 5.6505, time 2031.65ms, mfu 0.00%
+iter 910234: loss 5.7339, time 2045.81ms, mfu 0.00%
+iter 910235: loss 5.7059, time 2029.01ms, mfu 0.00%
+iter 910236: loss 5.2641, time 2049.79ms, mfu 0.00%
+iter 910237: loss 6.4079, time 2032.26ms, mfu 0.00%
+iter 910238: loss 5.4413, time 2027.98ms, mfu 0.00%
+iter 910239: loss 5.6758, time 2032.42ms, mfu 0.00%
+iter 910240: loss 5.8435, time 2026.18ms, mfu 0.00%
+iter 910241: loss 5.1807, time 2040.88ms, mfu 0.00%
+iter 910242: loss 5.3036, time 2030.80ms, mfu 0.00%
+iter 910243: loss 4.9011, time 2028.49ms, mfu 0.00%
+iter 910244: loss 5.4506, time 2028.77ms, mfu 0.00%
+iter 910245: loss 5.9842, time 2023.56ms, mfu 0.00%
+iter 910246: loss 5.3105, time 2039.58ms, mfu 0.00%
+iter 910247: loss 5.8832, time 2032.82ms, mfu 0.00%
+iter 910248: loss 6.2900, time 2027.32ms, mfu 0.00%
+iter 910249: loss 6.5940, time 2027.85ms, mfu 0.00%
+iter 910250: loss 7.4140, time 2029.02ms, mfu 0.00%
+iter 910251: loss 5.9677, time 2054.78ms, mfu 0.00%
+iter 910252: loss 5.9886, time 2039.82ms, mfu 0.00%
+iter 910253: loss 7.1980, time 2032.73ms, mfu 0.00%
+iter 910254: loss 6.0450, time 2026.67ms, mfu 0.00%
+iter 910255: loss 5.1769, time 2025.00ms, mfu 0.00%
+iter 910256: loss 5.4805, time 2050.17ms, mfu 0.00%
+iter 910257: loss 5.3711, time 2028.96ms, mfu 0.00%
+iter 910258: loss 5.7505, time 2026.20ms, mfu 0.00%
+iter 910259: loss 5.5421, time 2030.29ms, mfu 0.00%
+iter 910260: loss 5.8742, time 2020.95ms, mfu 0.00%
+iter 910261: loss 5.3242, time 2047.28ms, mfu 0.00%
+iter 910262: loss 6.0633, time 2026.82ms, mfu 0.00%
+iter 910263: loss 5.3442, time 2026.68ms, mfu 0.00%
+iter 910264: loss 5.4936, time 2026.35ms, mfu 0.00%
+iter 910265: loss 5.7872, time 2028.27ms, mfu 0.00%
+iter 910266: loss 5.1499, time 2043.12ms, mfu 0.00%
+iter 910267: loss 5.7200, time 2025.77ms, mfu 0.00%
+iter 910268: loss 6.6096, time 2023.11ms, mfu 0.00%
+iter 910269: loss 5.5669, time 2034.45ms, mfu 0.00%
+iter 910270: loss 6.3907, time 2027.22ms, mfu 0.00%
+iter 910271: loss 5.8245, time 2042.73ms, mfu 0.00%
+iter 910272: loss 6.0686, time 2021.62ms, mfu 0.00%
+iter 910273: loss 6.2879, time 2022.26ms, mfu 0.00%
+iter 910274: loss 6.3249, time 2023.22ms, mfu 0.00%
+iter 910275: loss 5.8414, time 2022.93ms, mfu 0.00%
+iter 910276: loss 5.7151, time 2040.86ms, mfu 0.00%
+iter 910277: loss 5.3054, time 2031.42ms, mfu 0.00%
+iter 910278: loss 5.1347, time 2027.17ms, mfu 0.00%
+iter 910279: loss 5.2245, time 2027.09ms, mfu 0.00%
+iter 910280: loss 7.6553, time 2024.94ms, mfu 0.00%
+iter 910281: loss 5.3227, time 2045.56ms, mfu 0.00%
+iter 910282: loss 6.3069, time 2029.58ms, mfu 0.00%
+iter 910283: loss 5.9482, time 2023.29ms, mfu 0.00%
+iter 910284: loss 6.3567, time 2027.30ms, mfu 0.00%
+iter 910285: loss 7.9799, time 2022.51ms, mfu 0.00%
+iter 910286: loss 6.2810, time 2047.81ms, mfu 0.00%
+iter 910287: loss 5.9698, time 2030.32ms, mfu 0.00%
+iter 910288: loss 7.9964, time 2020.03ms, mfu 0.00%
+iter 910289: loss 6.6947, time 2031.46ms, mfu 0.00%
+iter 910290: loss 6.8018, time 2026.21ms, mfu 0.00%
+iter 910291: loss 5.7186, time 2047.26ms, mfu 0.00%
+iter 910292: loss 6.2223, time 2020.58ms, mfu 0.00%
+iter 910293: loss 5.5776, time 2023.39ms, mfu 0.00%
+iter 910294: loss 5.6058, time 2035.10ms, mfu 0.00%
+iter 910295: loss 4.7198, time 2033.96ms, mfu 0.00%
+iter 910296: loss 5.9100, time 2034.44ms, mfu 0.00%
+iter 910297: loss 5.5359, time 2026.97ms, mfu 0.00%
+iter 910298: loss 5.0017, time 2023.79ms, mfu 0.00%
+iter 910299: loss 5.9267, time 2027.81ms, mfu 0.00%
+iter 910300: loss 5.2437, time 2038.14ms, mfu 0.00%
+iter 910301: loss 6.2769, time 2030.56ms, mfu 0.00%
+iter 910302: loss 5.9190, time 2026.09ms, mfu 0.00%
+iter 910303: loss 9.1244, time 2018.90ms, mfu 0.00%
+iter 910304: loss 7.1136, time 2028.18ms, mfu 0.00%
+iter 910305: loss 5.7632, time 2033.75ms, mfu 0.00%
+iter 910306: loss 6.3352, time 2024.39ms, mfu 0.00%
+iter 910307: loss 8.1905, time 2023.54ms, mfu 0.00%
+Traceback (most recent call last):
+  File "/home/tailiamalloy_gmail_com/energy-coding/train.py", line 746, in <module>
+    loss_dict = train_model.forward_loss_wrapper(batch, phase="train")
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tailiamalloy_gmail_com/energy-coding/EBT/model/nlp/ebt.py", line 186, in forward_loss_wrapper
+    predicted_distributions, predicted_energies = self(input_ids, return_raw_logits = True, no_randomness = no_randomness)
+                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tailiamalloy_gmail_com/energy-coding/venv/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1553, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tailiamalloy_gmail_com/energy-coding/venv/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1562, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tailiamalloy_gmail_com/energy-coding/EBT/model/nlp/ebt.py", line 159, in forward
+    raise ValueError("NaN or Inf gradients detected during MCMC.")
+ValueError: NaN or Inf gradients detected during MCMC.
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/home/tailiamalloy_gmail_com/energy-coding/train.py", line 746, in <module>
+[rank0]:     loss_dict = train_model.forward_loss_wrapper(batch, phase="train")
+[rank0]:                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/tailiamalloy_gmail_com/energy-coding/EBT/model/nlp/ebt.py", line 186, in forward_loss_wrapper
+[rank0]:     predicted_distributions, predicted_energies = self(input_ids, return_raw_logits = True, no_randomness = no_randomness)
+[rank0]:                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/tailiamalloy_gmail_com/energy-coding/venv/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1553, in _wrapped_call_impl
+[rank0]:     return self._call_impl(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/tailiamalloy_gmail_com/energy-coding/venv/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1562, in _call_impl
+[rank0]:     return forward_call(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/home/tailiamalloy_gmail_com/energy-coding/EBT/model/nlp/ebt.py", line 159, in forward
+[rank0]:     raise ValueError("NaN or Inf gradients detected during MCMC.")
+[rank0]: ValueError: NaN or Inf gradients detected during MCMC.
+[1;34mwandb[0m: 🚀 View run [33mcerulean-frog-14[0m at: [34mhttps://wandb.ai/university-of-luxembourg-trux/energy-coder/runs/96y3x8p7[0m
+[1;34mwandb[0m: Find logs at: [1;35mwandb/run-20260217_211558-96y3x8p7/logs[0m
+E0217 21:29:35.473000 140133661897408 torch/distributed/elastic/multiprocessing/api.py:833] failed (exitcode: 1) local_rank: 0 (pid: 125498) of binary: /home/tailiamalloy_gmail_com/energy-coding/venv/bin/python3
+Traceback (most recent call last):
+  File "/home/tailiamalloy_gmail_com/energy-coding/venv/bin/torchrun", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/tailiamalloy_gmail_com/energy-coding/venv/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 348, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/tailiamalloy_gmail_com/energy-coding/venv/lib/python3.11/site-packages/torch/distributed/run.py", line 901, in main
+    run(args)
+  File "/home/tailiamalloy_gmail_com/energy-coding/venv/lib/python3.11/site-packages/torch/distributed/run.py", line 892, in run
+    elastic_launch(
+  File "/home/tailiamalloy_gmail_com/energy-coding/venv/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 133, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/tailiamalloy_gmail_com/energy-coding/venv/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 264, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+train.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-02-17_21:29:35
+  host      : instance-20260217-135005.us-central1-a.c.testgcp-481922.internal
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 125498)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

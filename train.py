@@ -9,12 +9,15 @@ Example (DDP, 4 GPUs):
 	torchrun --standalone --nproc_per_node=4 train.py --dataset=openwebtext --data_dir=nanoGPT/data/openwebtext
 """
 
+import argparse
+import json
 import os
 import time
 import math
 import pickle
 import runpy
 import warnings
+import re
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -76,116 +79,197 @@ WANDB_PROJECT = os.environ.get("WANDB_PROJECT")
 wandb_run = None
 
 # -----------------------------------------------------------------------------
-# default config values designed to mirror nanoGPT training loop behavior
-# I/O
-out_dir = "out_ebt"
-eval_interval = 2000
-log_interval = 1
-eval_iters = 200
-eval_only = False
-always_save_checkpoint = True
-init_from = "scratch"  # 'scratch' or 'resume'
-resume_latest = False  # if True, resume from the most recent checkpoint in out_dir
+# Default config values designed to mirror nanoGPT training loop behavior.
+defaults = {
+	# I/O
+	"out_dir": "out_ebt",
+	"eval_interval": 2000,
+	"log_interval": 1,
+	"eval_iters": 200,
+	"eval_only": False,
+	"always_save_checkpoint": True,
+	"init_from": "scratch",
+	"resume_latest": False,
+	# data
+	"dataset": "openwebtext",
+	"data_dir": os.path.join("nanoGPT", "data", "openwebtext"),
+	"gradient_accumulation_steps": 5 * 8,
+	"batch_size": 4,
+	"block_size": 256,
+	# train_model.py-compatible aliases
+	"accumulate_grad_batches": 5 * 8,
+	"batch_size_per_device": 4,
+	"context_length": 256,
+	# model
+	"n_layer": 6,
+	"n_head": 6,
+	"n_embd": 384,
+	"dropout": 0.0,
+	# train_model.py-compatible aliases
+	"num_transformer_blocks": 6,
+	"multiheaded_attention_heads": 6,
+	"embedding_dim": 384,
+	# optimizer
+	"learning_rate": 1e-3,
+	"max_iters": 600000,
+	"weight_decay": 1e-1,
+	"beta1": 0.9,
+	"beta2": 0.95,
+	"grad_clip": 1.0,
+	# train_model.py-compatible aliases
+	"peak_learning_rate": 1e-3,
+	"max_steps": 600000,
+	"gradient_clip_val": 1.0,
+	# learning rate decay settings
+	"decay_lr": True,
+	"warmup_iters": 2000,
+	"lr_decay_iters": 600000,
+	"min_lr": 6e-5,
+	# train_model.py-compatible aliases
+	"warm_up_steps": 2000,
+	"max_scheduling_steps": 600000,
+	# DDP settings
+	"backend": "nccl",
+	# train_model.py-compatible hardware params
+	"gpus": "8",
+	"distributed_strategy": "ddp",
+	# system
+	"device": "auto",
+	"dtype": "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16",
+	"force_float32": True,
+	"compile": False,
+	# Vast.ai serverless (optional)
+	"train_vast_serverless": False,
+	"vast_endpoint_name": "yhqdfymr",
+	"vast_model_name": "Qwen/Qwen3-8B",
+	"vast_max_tokens": 256,
+	"vast_temperature": 0.7,
+	"vast_top_k": 20,
+	"vast_top_p": 0.4,
+	"vast_stream": False,
+	"vast_prompt_max_chars": 1000,
+	# memory check
+	"check_memory_fit": True,
+	"memory_safety_factor": 1.2,
+	"auto_reduce_on_oom": True,
+	"oom_retries": 3,
+	# EBT-specific defaults
+	"tokenizer": "gpt2",
+	"model_name": "ebt",
+	"ebt_type": "default",
+	"ebt_norm": "rms",
+	"ebt_act_func": "silu",
+	"ffn_dim_multiplier": None,
+	"dyt_alpha_init": 0.5,
+	"weight_initialization_method": "xavier",
+	"weight_initialization_gain": 1.0,
+	"mcmc_num_steps": 1,
+	"mcmc_step_size": 60.0,
+	"mcmc_step_size_learnable": False,
+	"langevin_dynamics_noise": 0.0,
+	"langevin_dynamics_noise_learnable": False,
+	"randomize_mcmc_step_size_scale": 1.0,
+	"randomize_mcmc_num_steps": 0,
+	"randomize_mcmc_num_steps_final_landscape": False,
+	"randomize_mcmc_num_steps_min": 0,
+	"denoising_initial_condition": "random_noise",
+	"gaussian_random_noise_scaling": 1.0,
+	"normalize_initial_condition": False,
+	"normalize_initial_condition_only_first_step": False,
+	"vocab_to_embed_uses_prob_dist": False,
+	"num_modality_processing_mlp_layers": 1,
+	"learnable_process_memory": False,
+	"process_memory_type": None,
+	"process_memory_linear_layer": False,
+	"clamp_futures_grad": False,
+	"clamp_futures_grad_max_change": 9.0,
+	"absolute_clamp": 0.0,
+	"clamp_max_after_warm_up": 0.0,
+	"sharpen_predicted_distribution": 0.0,
+	"mcmc_replay_buffer_size": 192,
+	"truncate_mcmc": False,
+	"no_mcmc_detach": False,
+	"contrastive_loss": False,
+	"contrastive_loss_coeff": 0.0005,
+	"discrete_contrastive_loss_true_logit_val": 0.0,
+	"soften_target_prob_dist": 0.0,
+	"reconstruction_coeff": 1.0,
+}
 
-# data
-dataset = "openwebtext"
-data_dir = os.path.join("nanoGPT", "data", dataset)
-gradient_accumulation_steps = 5 * 8
-batch_size = 4  # micro-batch size (smaller for local machines)
-block_size = 256
+def _parse_bool(value: str) -> bool:
+	value_lower = value.lower()
+	if value_lower in ("1", "true", "yes", "y", "on"):
+		return True
+	if value_lower in ("0", "false", "no", "n", "off"):
+		return False
+	raise argparse.ArgumentTypeError(f"Invalid boolean value: {value}")
 
-# model
-n_layer = 6
-n_head = 6
-n_embd = 384
-dropout = 0.0
 
-# optimizer
-learning_rate = 6e-4
-max_iters = 600000
-weight_decay = 1e-1
-beta1 = 0.9
-beta2 = 0.95
-grad_clip = 1.0
+def _parse_optional_str(value: str) -> str | None:
+	return None if value.lower() == "none" else value
 
-# learning rate decay settings
-decay_lr = True
-warmup_iters = 2000
-lr_decay_iters = 600000
-min_lr = 6e-5
 
-# DDP settings
-backend = "nccl"
+def _arg_type(default_value):
+	if isinstance(default_value, bool):
+		return _parse_bool
+	if default_value is None:
+		return _parse_optional_str
+	return type(default_value)
 
-# system
-device = "auto"  # 'auto', 'cuda', 'mps', or 'cpu'
-dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
-compile = False
 
-# Vast.ai serverless (optional)
-train_vast_serverless = False
-vast_endpoint_name = "yhqdfymr"
-vast_model_name = "Qwen/Qwen3-8B"
-vast_max_tokens = 256
-vast_temperature = 0.7
-vast_top_k = 20
-vast_top_p = 0.4
-vast_stream = False
-vast_prompt_max_chars = 1000
+def _parse_args(default_values: dict) -> dict:
+	parser = argparse.ArgumentParser()
+	for key, default_value in default_values.items():
+		parser.add_argument(f"--{key}", type=_arg_type(default_value), default=default_value)
+	args = parser.parse_args()
+	config_values = dict(default_values)
+	config_values.update(vars(args))
+	for key, value in config_values.items():
+		if value != default_values[key]:
+			print(f"Overriding: {key} = {value}")
+	return config_values
 
-# memory check
-check_memory_fit = True
-memory_safety_factor = 1.2
-auto_reduce_on_oom = True
-oom_retries = 3
 
-# EBT-specific defaults
-tokenizer = "gpt2"
-model_name = "ebt"
-ebt_type = "default"
-ebt_norm = "rms"
-ebt_act_func = "silu"
-ffn_dim_multiplier = None
-dyt_alpha_init = 0.5
-weight_initialization_method = "xavier"
-weight_initialization_gain = 1.0
+def _parse_gpus(value):
+	if isinstance(value, int):
+		return value
+	if isinstance(value, str):
+		value = value.strip()
+		if value.startswith("[") and value.endswith("]"):
+			return json.loads(value)
+		if value.isdigit() or (value.startswith("-") and value[1:].isdigit()):
+			return int(value)
+	return value
 
-mcmc_num_steps = 1
-mcmc_step_size = 60.0
-mcmc_step_size_learnable = False
-langevin_dynamics_noise = 0.0
-langevin_dynamics_noise_learnable = False
-randomize_mcmc_step_size_scale = 1.0
-randomize_mcmc_num_steps = 0
-randomize_mcmc_num_steps_final_landscape = False
-randomize_mcmc_num_steps_min = 0
-denoising_initial_condition = "random_noise"
-gaussian_random_noise_scaling = 1.0
-normalize_initial_condition = False
-normalize_initial_condition_only_first_step = False
-vocab_to_embed_uses_prob_dist = False
-num_modality_processing_mlp_layers = 1
-learnable_process_memory = False
-process_memory_type = None
-process_memory_linear_layer = False
-clamp_futures_grad = False
-clamp_futures_grad_max_change = 9.0
-absolute_clamp = 0.0
-clamp_max_after_warm_up = 0.0
-sharpen_predicted_distribution = 0.0
-truncate_mcmc = False
-no_mcmc_detach = False
-contrastive_loss = False
-contrastive_loss_coeff = 0.0005
-discrete_contrastive_loss_true_logit_val = 0.0
-soften_target_prob_dist = 0.0
-reconstruction_coeff = 1.0
 
+config = _parse_args(defaults)
+globals().update(config)
+
+# ----------------------------------------------------------------------------
+# Normalize train_model.py-style aliases after overrides so both names work.
+learning_rate = peak_learning_rate
+batch_size = batch_size_per_device
+gradient_accumulation_steps = accumulate_grad_batches
+block_size = context_length
+n_layer = num_transformer_blocks
+n_head = multiheaded_attention_heads
+n_embd = embedding_dim
+max_iters = max_steps
+lr_decay_iters = max_scheduling_steps
+warmup_iters = warm_up_steps
+grad_clip = gradient_clip_val
+config.update({k: globals()[k] for k in config.keys()})
 # -----------------------------------------------------------------------------
-config_keys = [k for k, v in globals().items() if not k.startswith("_") and isinstance(v, (int, float, bool, str))]
-exec(open(os.path.join("nanoGPT", "configurator.py")).read())
-config = {k: globals()[k] for k in config_keys}
-# -----------------------------------------------------------------------------
+
+gpus = _parse_gpus(gpus)
+if gpus == -1:
+	num_gpus_requested = torch.cuda.device_count()
+elif isinstance(gpus, list):
+	num_gpus_requested = len(gpus)
+elif isinstance(gpus, int):
+	num_gpus_requested = gpus
+else:
+	raise ValueError(f"Unsupported gpus value: {gpus}")
 
 # Ensure head_dim is even for rotary embeddings.
 if n_embd % n_head != 0:
@@ -243,6 +327,22 @@ else:
 	seed_offset = 0
 	ddp_world_size = 1
 
+if ddp:
+	if num_gpus_requested != ddp_world_size:
+		raise ValueError(
+			"Requested gpus does not match torchrun world size. "
+			f"gpus={gpus} (num_gpus={num_gpus_requested}) vs WORLD_SIZE={ddp_world_size}. "
+			"Update --gpus or --nproc_per_node to match."
+		)
+else:
+	if num_gpus_requested != 1:
+		print(
+			"Warning: --gpus requests multiple devices but DDP is not active; "
+			"using a single process. Use torchrun to enable multi-GPU training."
+		)
+	if device == "auto" and isinstance(gpus, list) and gpus:
+		device = f"cuda:{gpus[0]}"
+
 tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
 print(f"tokens per iteration will be: {tokens_per_iter:,}")
 
@@ -278,8 +378,15 @@ elif device == "mps":
 else:
 	device_type = "cpu"
 
+if force_float32:
+	dtype = "float32"
+
 ptdtype = {"float32": torch.float32, "bfloat16": torch.bfloat16, "float16": torch.float16}[dtype]
-ctx = nullcontext() if device_type in ("cpu", "mps") else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+ctx = (
+	nullcontext()
+	if device_type in ("cpu", "mps") or dtype == "float32"
+	else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+)
 
 if train_vast_serverless:
 	if not os.environ.get("VAST_API_KEY"):
@@ -299,18 +406,27 @@ if master_process and WANDB_API_KEY:
 				"dataset": dataset,
 				"data_dir": data_dir,
 				"out_dir": out_dir,
-				"batch_size": batch_size,
-				"block_size": block_size,
-				"n_layer": n_layer,
-				"n_head": n_head,
-				"n_embd": n_embd,
-				"learning_rate": learning_rate,
-				"max_iters": max_iters,
-				"gradient_accumulation_steps": gradient_accumulation_steps,
+				"batch_size_per_device": batch_size,
+				"accumulate_grad_batches": gradient_accumulation_steps,
+				"context_length": block_size,
+				"num_transformer_blocks": n_layer,
+				"multiheaded_attention_heads": n_head,
+				"embedding_dim": n_embd,
+				"peak_learning_rate": learning_rate,
+				"max_steps": max_iters,
+				"max_scheduling_steps": lr_decay_iters,
+				"warm_up_steps": warmup_iters,
+				"gradient_clip_val": grad_clip,
+				"weight_decay": weight_decay,
+				"beta1": beta1,
+				"beta2": beta2,
+				"gpus": gpus,
+				"distributed_strategy": distributed_strategy,
 				"device": device,
 				"dtype": dtype,
 				"mcmc_num_steps": mcmc_num_steps,
 				"mcmc_step_size": mcmc_step_size,
+				"mcmc_replay_buffer_size": mcmc_replay_buffer_size,
 				"train_vast_serverless": train_vast_serverless,
 				"vast_endpoint_name": vast_endpoint_name,
 				"vast_model_name": vast_model_name,
@@ -438,6 +554,15 @@ hparams = SimpleNamespace(
 	dyt_alpha_init=dyt_alpha_init,
 	weight_initialization_method=weight_initialization_method,
 	weight_initialization_gain=weight_initialization_gain,
+	peak_learning_rate=learning_rate,
+	accumulate_grad_batches=gradient_accumulation_steps,
+	max_steps=max_iters,
+	max_scheduling_steps=lr_decay_iters,
+	warm_up_steps=warmup_iters,
+	gradient_clip_val=grad_clip,
+	weight_decay=weight_decay,
+	beta1=beta1,
+	beta2=beta2,
 	mcmc_num_steps=mcmc_num_steps,
 	mcmc_step_size=mcmc_step_size,
 	mcmc_step_size_learnable=mcmc_step_size_learnable,
@@ -456,6 +581,8 @@ hparams = SimpleNamespace(
 	learnable_process_memory=learnable_process_memory,
 	process_memory_type=process_memory_type,
 	process_memory_linear_layer=process_memory_linear_layer,
+	gpus=gpus,
+	distributed_strategy=distributed_strategy,
 	clamp_futures_grad=clamp_futures_grad,
 	clamp_futures_grad_max_change=clamp_futures_grad_max_change,
 	absolute_clamp=absolute_clamp,
@@ -469,6 +596,7 @@ hparams = SimpleNamespace(
 	soften_target_prob_dist=soften_target_prob_dist,
 	reconstruction_coeff=reconstruction_coeff,
 	mcmc_replay_buffer=False,
+	mcmc_replay_buffer_size=mcmc_replay_buffer_size,
 	execution_mode="pretrain",
 	debug_unused_parameters=False,
 )
@@ -555,7 +683,12 @@ if master_process:
 				)
 
 # optimizer
-optimizer = torch.optim.AdamW(raw_model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
+optimizer = torch.optim.AdamW(
+	raw_model.parameters(),
+	lr=hparams.peak_learning_rate,
+	weight_decay=weight_decay,
+	betas=(beta1, beta2),
+)
 
 def get_uncompiled_model(model_to_use):
 	if hasattr(model_to_use, "_orig_mod"):
@@ -572,8 +705,21 @@ def normalize_state_dict_keys(state_dict):
 		return state_dict
 	return {key.replace("_orig_mod.", "", 1): value for key, value in state_dict.items()}
 
+
+def parse_iter_from_ckpt_path(ckpt_path: str | os.PathLike | None) -> int | None:
+	if not ckpt_path:
+		return None
+	stem = Path(ckpt_path).stem
+	if not stem.startswith("ckpt_iter_"):
+		return None
+	match = re.fullmatch(r"ckpt_iter_(\d+)", stem)
+	if not match:
+		return None
+	return int(match.group(1))
+
 # resume
 iter_num = 0
+resume_iter = 0
 best_val_loss = 1e9
 resume_ckpt_path = None
 if resume_latest:
@@ -590,6 +736,11 @@ if init_from == "resume":
 	load_target.load_state_dict(model_state, strict=False)
 	optimizer.load_state_dict(checkpoint["optimizer"])
 	iter_num = checkpoint.get("iter_num", 0)
+	iter_from_path = parse_iter_from_ckpt_path(ckpt_path)
+	resume_iter = iter_num
+	if iter_from_path is not None:
+		resume_iter = max(resume_iter, iter_from_path)
+		iter_num = resume_iter
 	best_val_loss = checkpoint.get("best_val_loss", 1e9)
 	if resume_latest and isinstance(checkpoint.get("config"), dict):
 		ckpt_config = checkpoint["config"]
@@ -635,13 +786,13 @@ def estimate_loss():
 
 def get_lr(it):
 	if it < warmup_iters:
-		return learning_rate * (it + 1) / (warmup_iters + 1)
+		return hparams.peak_learning_rate * (it + 1) / (warmup_iters + 1)
 	if it > lr_decay_iters:
 		return min_lr
 	decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
 	assert 0 <= decay_ratio <= 1
 	coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
-	return min_lr + coeff * (learning_rate - min_lr)
+	return min_lr + coeff * (hparams.peak_learning_rate - min_lr)
 
 if ddp and torch.distributed.is_initialized():
 	if master_process:
@@ -662,16 +813,17 @@ while True:
 	retries_left = oom_retries
 	while True:
 		try:
-			lr = get_lr(iter_num) if decay_lr else learning_rate
+			global_iter = resume_iter + local_iter_num
+			lr = get_lr(global_iter) if decay_lr else hparams.peak_learning_rate
 			for param_group in optimizer.param_groups:
 				param_group["lr"] = lr
 
-			if iter_num % eval_interval == 0 and master_process:
+			if global_iter % eval_interval == 0 and master_process:
 				losses = estimate_loss()
-				print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+				print(f"step {global_iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
 				loss_log["eval"].append(
 					{
-						"iter": iter_num,
+						"iter": global_iter,
 						"train": float(losses["train"]),
 						"val": float(losses["val"]),
 					}
@@ -694,7 +846,7 @@ while True:
 				if wandb_run is not None:
 					wandb_run.log(
 						{
-							"iter": iter_num,
+							"iter": global_iter,
 							"train_loss": float(losses["train"]),
 							"val_loss": float(losses["val"]),
 							"lr": lr,
@@ -703,19 +855,19 @@ while True:
 				save_loss_log()
 				if losses["val"] < best_val_loss or always_save_checkpoint:
 					best_val_loss = losses["val"]
-					if iter_num > 0:
+					if global_iter > 0:
 						checkpoint = {
 							"model": get_model_state_dict(raw_model),
 							"optimizer": optimizer.state_dict(),
-							"iter_num": iter_num,
+							"iter_num": global_iter,
 							"best_val_loss": best_val_loss,
 							"config": config,
 						}
 						print(f"saving checkpoint to {out_dir}")
 						torch.save(checkpoint, os.path.join(out_dir, "ckpt.pt"))
-						ckpt_iter_path = os.path.join(out_dir, f"ckpt_iter_{iter_num}.pt")
+						ckpt_iter_path = os.path.join(out_dir, f"ckpt_iter_{global_iter}.pt")
 						torch.save(checkpoint, ckpt_iter_path)
-			if iter_num == 0 and eval_only:
+			if global_iter == 0 and eval_only:
 				stop_training = True
 				break
 
@@ -750,16 +902,17 @@ while True:
 	t1 = time.time()
 	dt = t1 - t0
 	t0 = t1
-	if iter_num % log_interval == 0 and master_process:
+	global_iter = resume_iter + local_iter_num
+	if global_iter % log_interval == 0 and master_process:
 		lossf = loss.item() * gradient_accumulation_steps
 		if local_iter_num >= 5:
 			running_mfu = running_mfu if running_mfu != -1.0 else 0.0
-		print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
-		loss_log["train"].append({"iter": iter_num, "loss": float(lossf)})
+		print(f"iter {global_iter}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
+		loss_log["train"].append({"iter": global_iter, "loss": float(lossf)})
 		if wandb_run is not None:
 			wandb_run.log(
 				{
-					"iter": iter_num,
+					"iter": global_iter,
 					"loss": float(lossf),
 					"time_ms": dt * 1000.0,
 					"mfu": running_mfu * 100.0,
@@ -768,10 +921,9 @@ while True:
 			)
 		save_loss_log()
 
-	iter_num += 1
 	local_iter_num += 1
 
-	if iter_num > max_iters:
+	if global_iter >= max_iters:
 		break
 
 if ddp:

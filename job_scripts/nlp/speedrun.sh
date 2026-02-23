@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Speedrun-style EBT training on 4 GPUs.
+# Speedrun-style EBT training on 8 GPUs.
 # Mirrors the high-level flow in nanochat/runs/speedrun.sh but uses EBT train.py.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -18,21 +18,26 @@ export HF_CACHE_DIR="${HF_CACHE_DIR:-$ROOT_DIR/.hf_cache}"
 
 # EBT pretraining (OpenWebText) on 4 GPUs.
 # Adjust hyperparameters as needed for your hardware.
-torchrun --standalone --nproc_per_node=4 train.py \
+# --standalone --nproc_per_node=4 
+torchrun train.py \
   --dataset=openwebtext \
   --data_dir=nanoGPT/data/openwebtext \
   --out_dir=out_ebt_openwebtext \
-  --max_iters=100000 \
-  --lr_decay_iters=100000 \
-  --warmup_iters=2000 \
+  --max_steps=100000 \
+  --max_scheduling_steps=100000 \
+  --warm_up_steps=2000 \
   --eval_interval=100 \
-  --batch_size=24 \
-  --gradient_accumulation_steps=20 \
-  --block_size=512 \
-  --n_layer=8 \
-  --n_head=8 \
-  --n_embd=512 \
+  --batch_size_per_device=24 \
+  --accumulate_grad_batches=20 \
+  --context_length=512 \
+  --num_transformer_blocks=8 \
+  --multiheaded_attention_heads=8 \
+  --embedding_dim=512 \
   --tokenizer=gpt2 \
+  --gpus=8 \
+  --distributed_strategy=ddp \
   --compile=True \
   --mcmc_num_steps=1 \
-  --mcmc_step_size=60.0
+  --mcmc_replay_buffer_size=48 \
+  --mcmc_step_size=60.0 \
+
