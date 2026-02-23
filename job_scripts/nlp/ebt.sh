@@ -63,3 +63,9 @@ else
     --normalize_initial_condition=True \
     --clamp_futures_grad=True
 fi
+
+# scp ~/models/my_model.pt tailiamalloy_gmail_com@instance-20260217-135005:~/energy-coding/models/
+
+# scp ./Programing/ckpt_iter_910000.pt tailiamalloy_gmail_com@34.28.128.97:~/energy-coding/out_ebt_openwebtext/
+
+# gcloud compute disks resize instance-20260217-135005 --size=1000 --zone=us-central1-a 
