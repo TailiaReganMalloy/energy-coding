@@ -26,6 +26,33 @@ torchrun --standalone --nproc_per_node=8  train.py \
     --mcmc_replay_buffer_size=48 \
     --mcmc_step_size=2.0 \
     --normalize_initial_condition=True \
-    --clamp_futures_grad=True 
+    --clamp_futures_grad=True
+else
+  torchrun --standalone --nproc_per_node=4 train.py \
+    --dataset=openwebtext \
+    --data_dir=nanoGPT/data/openwebtext \
+    --out_dir=out_ebt_openwebtext \
+    --resume_latest=True \
+    --max_iters=500000 \
+    --lr_decay_iters=500000 \
+    --warmup_iters=2000 \
+    --eval_interval=500 \
+    --batch_size=2 \
+    --gradient_accumulation_steps=4 \
+    --block_size=512 \
+    --n_layer=8 \
+    --n_head=8 \
+    --n_embd=512 \
+    --tokenizer=gpt2 \
+    --compile=True \
+    --mcmc_num_steps=2 \
+    --mcmc_step_size=16.0 \
+    --normalize_initial_condition=True \
+    --clamp_futures_grad=True
+fi
 
-   
+# scp ~/models/my_model.pt tailiamalloy_gmail_com@instance-20260217-135005:~/energy-coding/models/
+
+# scp ./Programing/ckpt_iter_910000.pt tailiamalloy_gmail_com@34.28.128.97:~/energy-coding/out_ebt_openwebtext/
+
+# gcloud compute disks resize instance-20260217-135005 --size=1000 --zone=us-central1-a 

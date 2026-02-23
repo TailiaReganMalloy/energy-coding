@@ -13,3 +13,9 @@
 [submodule "nanochat"]
 	path = nanochat
 	url = https://github.com/TailiaReganMalloy/nanochat.git
+[submodule "self-instruct"]
+	path = self-instruct
+	url = https://github.com/TailiaReganMalloy/self-instruct
+[submodule "dclm"]
+	path = dclm
+	url = https://github.com/TailiaReganMalloy/dclm
