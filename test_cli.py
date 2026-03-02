@@ -1,7 +1,9 @@
 """Interactive CLI for EBT checkpoints.
 
 Example:
-  python ebt_cli.py --ckpt_path Programing/ckpt_iter_910000.pt
+  python test_cli.py --ckpt_path Programing/ckpt_iter_910000.pt
+
+  python test_cli.py --ckpt_path out_ebt_instruct/ckpt_iter_480000.pt
 
   A female chef in white uniform shows a stack of baking pans in a large kitchen presenting them. the pans
 """
