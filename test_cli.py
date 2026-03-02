@@ -5,11 +5,25 @@ Example:
 
   python test_cli.py --ckpt_path out_ebt_instruct/ckpt_iter_480000.pt
 
+  python ebt_cli.py --ckpt_path ./trained_models/ebt_instruct/ckpt_iter_60000.pt --device mps --temperature 0 --top_k 0 --top_p 1.0
+
   A female chef in white uniform shows a stack of baking pans in a large kitchen presenting them. the pans
+
+[[Question]]: Summarize the paragraph in 2-3 sentences. 
+
+Paragraph: "The city council approved a pilot program to replace diesel buses with electric buses over the next 18 months. Officials estimate a 22% reduction in local transport emissions and lower maintenance costs after year two." 
+
+[[Answer]]:
+
+Detect spam comments in the reddit thread. the task is to predict if a comment is spam or not using some machine learning model (or whatever you think makes sense). output 1 - spam, 0 - not spam. Document: I am a bot. 
+
+50 sample of accuract, using higher inference computer, means less pretraining time, if we cant we should do more, simple mbpp. task 
+
 """
 
 import argparse
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -136,10 +150,12 @@ def apply_repetition_penalty(logits, generated_ids, penalty):
 	return logits
 
 
-def generate(model, tokenizer, hparams, prompt, device, max_new_tokens, temperature, top_p, top_k, repetition_penalty, stream=False):
+def generate(model, tokenizer, hparams, prompt, device, max_new_tokens, temperature, top_p, top_k, repetition_penalty, stream=False, stop_on_paragraph_break=True):
 	model.eval()
 	requires_grad = hparams.model_name == "ebt" and not hparams.infer_ebt_advanced
 	context = torch.enable_grad() if requires_grad else torch.inference_mode()
+	show_progress = not stream
+	auto_stop_on_paragraph_break = stop_on_paragraph_break
 	with context:
 		input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
 		max_context = hparams.context_length
@@ -149,7 +165,26 @@ def generate(model, tokenizer, hparams, prompt, device, max_new_tokens, temperat
 			if stream:
 				print("[prompt truncated to fit context]\n", end="")
 		generated_ids = []
+		generated_text = ""
+		if show_progress:
+			bar_width = 30
+			start_time = time.time()
+			print("Generating:", end="", flush=True)
 		for _ in range(max_new_tokens):
+			if show_progress:
+				progress = len(generated_ids)
+				filled = int(bar_width * progress / max_new_tokens) if max_new_tokens > 0 else bar_width
+				bar = "=" * filled + "-" * (bar_width - filled)
+				percent = int(100 * progress / max_new_tokens) if max_new_tokens > 0 else 100
+				elapsed = time.time() - start_time
+				rate = progress / elapsed if elapsed > 0 else 0.0
+				remaining = max_new_tokens - progress
+				eta = remaining / rate if rate > 0 else 0.0
+				print(
+					f"\rGenerating: [{bar}] {percent:3d}% | {elapsed:6.1f}s elapsed | {eta:6.1f}s ETA",
+					end="",
+					flush=True,
+				)
 			logits = get_logits(hparams, model, input_ids)
 			next_logits = logits[:, -1, :]
 			next_logits = apply_repetition_penalty(next_logits, generated_ids, repetition_penalty)
@@ -169,33 +204,71 @@ def generate(model, tokenizer, hparams, prompt, device, max_new_tokens, temperat
 			input_ids = torch.cat([input_ids, next_token], dim=-1)
 			token_id = next_token.item()
 			generated_ids.append(token_id)
+			generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
 			if stream:
 				print(tokenizer.decode([token_id], skip_special_tokens=True), end="", flush=True)
 				if len(generated_ids) >= 2:
 					last_text = tokenizer.decode(generated_ids[-2:], skip_special_tokens=True)
 					if "\n\n" in last_text:
 						break
+			if auto_stop_on_paragraph_break and "\n\n" in generated_text and len(generated_text.strip()) >= 32:
+				break
 			if token_id == tokenizer.eos_token_id:
 				break
 		if stream:
 			print("")
+		if show_progress:
+			elapsed = time.time() - start_time
+			print(
+				"\rGenerating: [" + "=" * bar_width + f"] 100% | {elapsed:6.1f}s elapsed |   0.0s ETA",
+				flush=True,
+			)
 			return tokenizer.decode(generated_ids, skip_special_tokens=True)
+		if show_progress:
+			elapsed = time.time() - start_time
+			print(
+				"\rGenerating: [" + "=" * bar_width + f"] 100% | {elapsed:6.1f}s elapsed |   0.0s ETA",
+				flush=True,
+			)
 		return tokenizer.decode(generated_ids, skip_special_tokens=True)
+
+
+def read_prompt_with_continuations(first_line):
+	lines = [first_line]
+	joined = first_line
+	requires_answer_tag = "[[Question]]" in first_line and "[[Answer]]" not in first_line
+	while requires_answer_tag and "[[Answer]]" not in joined:
+		next_line = input().rstrip("\n")
+		if next_line.lower() in {"/cancel", "cancel"}:
+			return ""
+		lines.append(next_line)
+		joined = "\n".join(lines)
+	return joined
+
+
+def normalize_prompt_for_answer_generation(prompt):
+	for marker in ("[[Answer]]:", "### Response:"):
+		if marker in prompt:
+			cutoff = prompt.rfind(marker) + len(marker)
+			normalized = prompt[:cutoff].rstrip()
+			return normalized + "\n"
+	return prompt
 
 
 def main():
 	parser = argparse.ArgumentParser(description="EBT interactive CLI")
 	parser.add_argument("--ckpt_path", required=True, help="Path to ckpt_iter_XXXX.pt or ckpt.pt")
-	parser.add_argument("--device", default="auto", choices=["auto", "cuda", "mps", "cpu"])
+	parser.add_argument("--device", default="mps", choices=["auto", "cuda", "mps", "cpu"])
 	parser.add_argument("--max_gen_len", type=int, default=128)
-	parser.add_argument("--temperature", type=float, default=0.6)
-	parser.add_argument("--top_p", type=float, default=0.9)
-	parser.add_argument("--top_k", type=int, default=50)
+	parser.add_argument("--temperature", type=float, default=0.8)
+	parser.add_argument("--top_p", type=float, default=1.0)
+	parser.add_argument("--top_k", type=int, default=5)
 	parser.add_argument("--repetition_penalty", type=float, default=1.1)
 	parser.add_argument("--stream", action="store_true", help="Print tokens as they are generated")
+	parser.add_argument("--no_stop_on_paragraph_break", action="store_true", help="Disable stopping generation at first blank line (\\n\\n)")
 	parser.add_argument("--infer_ebt_advanced", action="store_true")
-	parser.add_argument("--mcmc_num_steps", type=int, default=None, help="Override mcmc_num_steps for faster inference (must be >= 1)")
-	parser.add_argument("--mcmc_step_size", type=float, default=None, help="Override mcmc_step_size for inference")
+	parser.add_argument("--mcmc_num_steps", type=int, default=5, help="Override mcmc_num_steps for faster inference (must be >= 1)")
+	parser.add_argument("--mcmc_step_size", type=float, default=60, help="Override mcmc_step_size for inference")
 	parser.add_argument("--infer_ebt_override_alpha", type=float, default=0.0)
 	parser.add_argument("--infer_generated_samples", type=int, default=1)
 	parser.add_argument("--infer_langevin_dynamics_noise", type=float, default=0.0)
@@ -206,6 +279,10 @@ def main():
 		default="min",
 	)
 	args = parser.parse_args()
+
+	if args.top_k == 1 and args.temperature > 0:
+		print("Warning: top_k=1 with temperature>0 is effectively near-greedy decoding and can degrade output quality.")
+		print("Try --temperature 0 (fully greedy) or increase --top_k (e.g. 20-50).")
 
 	if args.device == "auto":
 		if torch.cuda.is_available():
@@ -230,12 +307,17 @@ def main():
 	tokenizer = AutoTokenizer.from_pretrained(hparams.tokenizer, clean_up_tokenization_spaces=False)
 
 	print("Interactive EBT CLI. Type a prompt and press enter. Type /exit to quit.")
+	print("For multi-line question prompts, paste lines and include [[Answer]]:. Type /cancel to abort input.")
 	while True:
-		prompt = input("\n> ").strip()
+		prompt = input("\n> ").rstrip("\n")
 		if prompt.lower() in {"/exit", "exit", "quit"}:
 			break
 		if not prompt:
 			continue
+		prompt = read_prompt_with_continuations(prompt)
+		if not prompt:
+			continue
+		prompt = normalize_prompt_for_answer_generation(prompt)
 		response = generate(
 			model,
 			tokenizer,
@@ -248,6 +330,7 @@ def main():
 			args.top_k,
 			args.repetition_penalty,
 			stream=args.stream,
+			stop_on_paragraph_break=not args.no_stop_on_paragraph_break,
 		)
 		if not args.stream:
 			print(response)
