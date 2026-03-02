@@ -1,14 +1,16 @@
 """Load an EBT checkpoint and evaluate its CORE metric.
 
 Example:
-  python test_core.py --ckpt_path ckpt_iter_480000.pt --max-per-task 100 --mcmc_num_steps
+	python test_core.py --ckpt_path out_ebt_instruct/ckpt_iter_480000.pt
 """
 
 import argparse
+import io
 import json
 import os
 import sys
 import warnings
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -150,6 +152,7 @@ class EBTCoreModelWrapper:
 			learning=False,
 			return_raw_logits=True,
 			no_randomness=True,
+			return_last_only=True,
 		)
 		logits = logits_per_step[-1]
 		if targets is None:
@@ -204,25 +207,91 @@ def load_ebt_for_core(
 	model = EBTCoreModelWrapper(raw_model, max_seq_len=hparams.context_length)
 	tokenizer = HuggingFaceTokenizer.from_pretrained(hparams.tokenizer)
 	step = checkpoint.get("iter_num", None)
-	return model, tokenizer, step
+	return model, tokenizer, step, config
+
+
+def evaluate_mcmc_sweep(model, tokenizer, device, max_per_task, mcmc_values, model_info):
+	try:
+		import pandas as pd
+	except ModuleNotFoundError as exc:
+		raise ModuleNotFoundError(
+			"pandas is required for --test_core sweep output. Install with: pip install pandas"
+		) from exc
+
+	try:
+		from tqdm import tqdm
+	except ModuleNotFoundError:
+		def tqdm(iterable, **kwargs):
+			return iterable
+
+	steps_to_eval = list(mcmc_values)
+	if not steps_to_eval:
+		raise ValueError("mcmc_values must contain at least one integer")
+	if any(step < 1 for step in steps_to_eval):
+		raise ValueError("All mcmc_values must be >= 1")
+	rows = []
+
+	progress_bar = tqdm(total=0, desc="CORE sweep", unit="eval", dynamic_ncols=True)
+	for mcmc_steps in steps_to_eval:
+		progress_bar.set_postfix(mcmc_num_steps=mcmc_steps)
+		model.model.hparams.mcmc_num_steps = mcmc_steps
+		capture_stream = io.StringIO()
+		with redirect_stdout(capture_stream), redirect_stderr(capture_stream):
+			core = evaluate_core(model, tokenizer, device, max_per_task=max_per_task)
+
+		captured_lines = capture_stream.getvalue().splitlines()
+		eval_line_count = sum(1 for line in captured_lines if line.lstrip().startswith("Evaluating:"))
+		if eval_line_count > 0 and progress_bar.total == 0:
+			progress_bar.total = eval_line_count * len(steps_to_eval)
+			progress_bar.refresh()
+		progress_bar.update(eval_line_count)
+		rows.append(
+			{
+				"ckpt_path": str(model_info["ckpt_path"]),
+				"checkpoint_iter": model_info["checkpoint_iter"],
+				"device": device,
+				"max_per_task": max_per_task,
+				"model_name": model_info["model_name"],
+				"tokenizer": model_info["tokenizer"],
+				"context_length": model_info["context_length"],
+				"n_layer": model_info["n_layer"],
+				"n_head": model_info["n_head"],
+				"n_embd": model_info["n_embd"],
+				"mcmc_num_steps": mcmc_steps,
+				"core_metric": core["core_metric"],
+				"centered_results_json": json.dumps(core["centered_results"], sort_keys=True),
+			}
+		)
+
+	progress_bar.close()
+
+	return pd.DataFrame(rows)
 
 
 def main():
-	parser = argparse.ArgumentParser(description="Evaluate CORE metric for an EBT checkpoint")
+	parser = argparse.ArgumentParser(description="Evaluate CORE metric sweep for an EBT checkpoint")
 	parser.add_argument("--ckpt_path", required=True, help="Path to ckpt_iter_XXXX.pt or ckpt.pt")
 	parser.add_argument("--device", default="auto", choices=["auto", "cuda", "mps", "cpu"])
-	parser.add_argument("--max-per-task", type=int, default=-1, help="Max examples per CORE task (-1 = all)")
-	parser.add_argument("--mcmc_num_steps", type=int, default=None, help="Override MCMC steps for EBT inference (must be >= 1)")
-	parser.add_argument("--temperature", type=float, default=None, help="Inference temperature override")
-	parser.add_argument("--top_p", type=float, default=None, help="Top-p (nucleus) sampling override, in (0, 1]")
-	parser.add_argument("--top_k", type=int, default=None, help="Top-k sampling override (>= 0)")
+	parser.add_argument("--max-per-task", type=int, default=100, help="Max examples per CORE task (default: 100)")
+	parser.add_argument(
+		"--mcmc-values",
+		type=int,
+		nargs="+",
+		default=[1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+		help="Explicit MCMC values to sweep, e.g. --mcmc-values 1 10 20",
+	)
+	parser.add_argument("--temperature", type=float, default=0.8, help="Inference temperature override")
+	parser.add_argument("--top_p", type=float, default=0.8, help="Top-p (nucleus) sampling override, in (0, 1]")
+	parser.add_argument("--top_k", type=int, default=10, help="Top-k sampling override (>= 0)")
+	parser.add_argument("--output-csv", default="core_mcmc_sweep.csv", help="Where to save sweep results as CSV")
 	args = parser.parse_args()
+	mcmc_values = list(args.mcmc_values)
 
 	device = resolve_device(args.device)
-	model, tokenizer, step = load_ebt_for_core(
+	model, tokenizer, step, config = load_ebt_for_core(
 		args.ckpt_path,
 		device,
-		mcmc_num_steps_override=args.mcmc_num_steps,
+		mcmc_num_steps_override=mcmc_values[0],
 		temperature_override=args.temperature,
 		top_p_override=args.top_p,
 		top_k_override=args.top_k,
@@ -230,12 +299,45 @@ def main():
 
 	label = f"EBT checkpoint (iter {step})" if step is not None else "EBT checkpoint"
 	print(f"Evaluating {label} on device={device}")
-	core = evaluate_core(model, tokenizer, device, max_per_task=args.max_per_task)
+	print(
+		f"Running CORE sweep for mcmc_num_steps values "
+		f"{mcmc_values} "
+		f"with max_per_task={args.max_per_task}"
+	)
 
-	print("\\nCORE metric:")
-	print(f"{core['core_metric']:.6f}")
-	print("\\nPer-task centered results:")
-	print(json.dumps(core["centered_results"], indent=2, sort_keys=True))
+	model_info = {
+		"ckpt_path": args.ckpt_path,
+		"checkpoint_iter": step,
+		"model_name": config.get("model_name", "ebt"),
+		"tokenizer": config.get("tokenizer", "gpt2"),
+		"context_length": config.get("block_size", 256),
+		"n_layer": config.get("n_layer", 6),
+		"n_head": config.get("n_head", 6),
+		"n_embd": config.get("n_embd", 384),
+	}
+
+	df = evaluate_mcmc_sweep(
+		model=model,
+		tokenizer=tokenizer,
+		device=device,
+		max_per_task=args.max_per_task,
+		mcmc_values=mcmc_values,
+		model_info=model_info,
+	)
+
+	output_csv = Path(args.output_csv)
+	output_csv.parent.mkdir(parents=True, exist_ok=True)
+	df.to_csv(output_csv, index=False)
+
+	print("\nSweep results (mcmc_num_steps vs core_metric):")
+	print(df[["mcmc_num_steps", "core_metric"]].to_string(index=False))
+	best_idx = df["core_metric"].idxmax()
+	best_row = df.loc[best_idx]
+	print(
+		f"\nBest CORE metric: {best_row['core_metric']:.6f} "
+		f"at mcmc_num_steps={int(best_row['mcmc_num_steps'])}"
+	)
+	print(f"Saved full sweep dataframe to: {output_csv}")
 
 
 if __name__ == "__main__":
