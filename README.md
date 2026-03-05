@@ -1,3 +1,46 @@
+# EBT Coding Project Next Steps 
+
+The goal of this project is to train a consistent and dependable EBT model that can have guarantees on correctness and stability for various software engineering tasks like code generation, code completion, automated program repair, etc.
+
+EBT models differ from trasitional transformer based LLMs because of the monte-carlo multi-chain parameter that controlls the number of optimization steps that are performed on the energy function over possible next tokens that is output by the model. 
+
+The intuition behind the project, and our hope, is that adjusting the depth of optimization of this energy function during SWE tasks will improve the consistency of coding models, as traditional transformer based LLMs are inherently stochastic they can be inconsistent, such as by introducing different bugs/errors when editing code for APR. 
+
+## Previous Model Training 
+1. ~300M model was pretrained on openwebtext (data directory: [[nanoGPT/data/openwebtext]]) and fine-tuned on self-instruct (data directory: self-instruct/data/finetuning/self_instruct_221203). 
+2. This model was trained with the parameter settings shown in [[job_scripts/pretrain/ebt.sh]] for pretraining and [[job_scripts/instruct/ebt.sh]] for finetuning
+
+## Planning 
+We need to determine 
+1. A prediction of the cost for training so that we can ensure we have enough resources ~2K euro before we make plans that will end up costing too much. 
+2. The type of resource we will train on, the 300M model was trained on 8xRTX9000s for ~3 days and then finetuned with google cloud 8xV1s for 3 about a week. This significantly limited the batch size particularly for finetuning. 
+3. What datasets to use for pretraining and if we need to edit or currate them. 
+4. What datasets to use for self-instruct finetunting and if we need to edit or currate them. 
+5. The hyperparameters to use fo training, most important are the 
+    a. size of the model (e.g the 'xl' model is "num_transformer_blocks": 24, "multiheaded_attention_heads": 32, "embedding_dim": 2048, for a total size of about 800M parameters) see [[EBT/model/model_utils.py]] 
+    b. learning rate,
+    c. mcmc_steps (in the 300M run we just used 1, but the nlp training in the EBT folder randomizes it between 1 and 2)
+    d. number of gpus (to optimize our training per $ spent), e.g on Vast.AI 8xH200s has 140GB gpu ram and costs about 18/hour which would budget around 5 days of training at our current cost target.  
+    e. batch size (needs to fit on our training device),
+    some other ones. 
+
+## Pretraining 
+1. Train a ~800M - 1.3B parameter EBT model on NLP task, this will allow for comparison between the performance of equally sized gpt2 and gpt3 models 
+See the current job script at: [[job_scripts/pretrain/xl_ebt.sh]]
+
+## Instruct Fine-Tuning 
+2. Fine tune the model on a instruct task, ideall with coding already in it like the self-instruct which has human-eval as part of its training task. 
+3. Includes subsequent coding fine-tuning if necessary to do independently of the instruct fine-tuning. 
+
+## Evaluation and Coding Comparison 
+
+1. During instruct fine-tuning we plan to validate checkpoints using the CORE metric [[https://arxiv.org/abs/2406.11794]] which will allow us to stop training once similar performance as gpt2 or gpt3 is reached. 
+    a. This can also be used as a early measure of whether model accuracy is improving during fine-tuning, by testing the performance with a sweep of different MCMC parameters, see the [[test_core.py]] file for an example of this. An MCMC sweep of the ~300M model showed no difference in performance [[core_task_sum_mcmc_bars.png]]
+2. A metric of coding ability comparison that fouces specifically on our goal of training a consistent and dependable 
+
+
+
+
 # Energy-Based Transformer (EBT) Training Hub
 
 This repository brings together **Energy-Based Transformers (EBT)** with the training workflows and practical tooling from **nanochat** and **nanoGPT**. The goal is to train EBT models using the scalable, minimal, and reproducible training approaches proven in those projects, while preserving EBT’s core promise: **generalizable reasoning and System 2 thinking across modalities**.

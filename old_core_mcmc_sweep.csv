@@ -1,0 +1,4 @@
+ckpt_path,checkpoint_iter,device,max_per_task,model_name,tokenizer,context_length,n_layer,n_head,n_embd,mcmc_num_steps,core_metric,centered_results_json
+out_ebt_instruct/ckpt_iter_480000.pt,480000,cuda,100,ebt,gpt2,512,24,16,1024,1,0.2189218830091856,"{""bigbench_language_identification"": 0.2189218830091856}"
+out_ebt_instruct/ckpt_iter_480000.pt,480000,cuda,100,ebt,gpt2,512,24,16,1024,10,0.22992297262772998,"{""bigbench_language_identification"": 0.22992297262772998}"
+out_ebt_instruct/ckpt_iter_480000.pt,480000,cuda,100,ebt,gpt2,512,24,16,1024,20,0.22992297262772998,"{""bigbench_language_identification"": 0.22992297262772998}"

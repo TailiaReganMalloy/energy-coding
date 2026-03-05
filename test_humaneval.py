@@ -305,7 +305,7 @@ def main():
     parser.add_argument("--ckpt_path", required=True, help="Path to ckpt_iter_XXXX.pt or ckpt.pt")
     parser.add_argument("--device", default="auto", choices=["auto", "cuda", "mps", "cpu"])
     parser.add_argument("--max_new_tokens", type=int, default=256)
-    parser.add_argument("--temperature", type=float, default=0.2)
+    parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top_p", type=float, default=0.9)
     parser.add_argument("--top_k", type=int, default=50)
     parser.add_argument("--repetition_penalty", type=float, default=1.1)

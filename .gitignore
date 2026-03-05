@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 hf_cache
 
+gpt-2/ 
+
 # Virtual environments
 venv/
 .venv/

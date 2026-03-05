@@ -2,8 +2,6 @@
 
 Example:
   python finetuning/train.py --ckpt_path out_ebt_openwebtext/ckpt_iter_135000.pt
-
-  Can you edit it so the path takes in a folder with the default trained_models and two model types, ebt and gpt. In each folder is a set of model checkpoints skpt_iter_XXXX.pt and we want to compare ebt and gpt in terms of how their checkpoint impacts the slope of the regression that is made at the end. Instead of showing each regression it should plot a comparison of gpt and ebt where the x axis is the checkpoint iteration and the y-axis is the slope of the regression 
 """
 
 import argparse

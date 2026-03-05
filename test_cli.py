@@ -258,7 +258,7 @@ def normalize_prompt_for_answer_generation(prompt):
 def main():
 	parser = argparse.ArgumentParser(description="EBT interactive CLI")
 	parser.add_argument("--ckpt_path", required=True, help="Path to ckpt_iter_XXXX.pt or ckpt.pt")
-	parser.add_argument("--device", default="mps", choices=["auto", "cuda", "mps", "cpu"])
+	parser.add_argument("--device", default="auto", choices=["auto", "cuda", "mps", "cpu"])
 	parser.add_argument("--max_gen_len", type=int, default=128)
 	parser.add_argument("--temperature", type=float, default=0.8)
 	parser.add_argument("--top_p", type=float, default=1.0)
@@ -290,6 +290,13 @@ def main():
 		elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
 			device = "mps"
 		else:
+			device = "cpu"
+	elif args.device == "mps" and not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+		if torch.cuda.is_available():
+			print("Warning: MPS requested but unavailable on this machine; falling back to CUDA.")
+			device = "cuda"
+		else:
+			print("Warning: MPS requested but unavailable on this machine; falling back to CPU.")
 			device = "cpu"
 	else:
 		device = args.device
